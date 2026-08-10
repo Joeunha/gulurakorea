@@ -1,0 +1,21 @@
+{
+  "name": "daehanminguk-burumarble",
+  "private": true,
+  "version": "0.12.0",
+  "description": "여권 + 보드게임 컨셉의 국내여행 웹앱. 2026 관광데이터 활용 공모전 출품작.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:artifact": "node scripts/build-artifact.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}
