@@ -57,7 +57,7 @@ const SAMPLE_POOL = [
 const THEME_LABELS = { sea:"바다", nature:"산·자연", city:"도시", food:"맛집", history:"역사·문화" };
 const THEME_LIST = ["sea","nature","city","food","history"];
 const DIST_STEPS = [{label:"근교",sub:"~80km",cap:80},{label:"가까이",sub:"~170km",cap:170},{label:"멀리",sub:"~280km",cap:280},{label:"전국",sub:"제한 없음",cap:9999}];
-const DURATIONS = ["당일치기","1박 2일","2박 3일","3박 4일 이상"];
+const DURATIONS = ["당일치기","1박 2일","2박 3일"];
 const BUDGETS = [{label:"~10만원",v:"low"},{label:"10~30만원",v:"mid"},{label:"30만원+",v:"high"}];
 const EVENT_CARDS = [
   { id:"toll", name:"통행료 면제권", icon:"🎫", desc:"친구 타일에 떨어져도 통행료 면제" },
@@ -122,52 +122,467 @@ const NATIONAL_ROOMS = [
   { id:"r7", name:"새내기 여행방", score:430, regions:9 },
 ];
 
-/* 데이터 접근 계층 */
-async function fetchDestinations({ themes, distCap }) {
-  let pool = SAMPLE_POOL.filter(d => d.distanceKm <= distCap);
-  if (themes.length) pool = pool.filter(d => d.themes.some(t => themes.includes(t)));
-  let relaxed = false;
-  if (pool.length === 0) { pool = SAMPLE_POOL.filter(d => d.distanceKm <= distCap); relaxed = true; }
-  if (pool.length === 0) { pool = [...SAMPLE_POOL]; relaxed = true; }
-  return { pool, relaxed };
+/* ═══════════════════════════════════════════════════════════
+   TourAPI 4.0 · 한국관광공사 국문 관광정보 서비스 (KorService2)
+   https://apis.data.go.kr/B551011/KorService2
+   ─ 사용 오퍼레이션
+     · areaBasedList2      지역기반 관광정보 목록
+     · locationBasedList2  좌표기반 주변 관광정보 (미션 생성용)
+     · detailCommon2       콘텐츠 공통정보 (overview / 대표이미지)
+   ═══════════════════════════════════════════════════════════ */
+const TOUR_BASE = "https://apis.data.go.kr/B551011/KorService2";
+const TOUR_CFG = {
+  key: "0bf54343e288b4b60ab5cbd7f063ab23791ed410c8855990cba319a33bc3af18", // data.go.kr 일반 인증키
+  app: "PaltoJeongbok",
+  proxy: "", // CORS 우회 프록시 prefix. 비워두면 브라우저에서 직접 호출.
+};
+const HOME_ORIGIN = { lat: 37.5665, lng: 126.9780, label: "서울" }; // 기본 출발지: 서울시청
+
+/* TourAPI areaCode ↔ 시도 (+ 시도 중심 좌표: 거리 조건 1차 필터용) */
+const TOUR_AREAS = [
+  { code:"1",  sido:"서울", lat:37.5665, lng:126.9780 },
+  { code:"2",  sido:"인천", lat:37.4563, lng:126.7052 },
+  { code:"3",  sido:"대전", lat:36.3504, lng:127.3845 },
+  { code:"4",  sido:"대구", lat:35.8714, lng:128.6014 },
+  { code:"5",  sido:"광주", lat:35.1595, lng:126.8526 },
+  { code:"6",  sido:"부산", lat:35.1796, lng:129.0756 },
+  { code:"7",  sido:"울산", lat:35.5384, lng:129.3114 },
+  { code:"8",  sido:"세종", lat:36.4801, lng:127.2890 },
+  { code:"31", sido:"경기", lat:37.4138, lng:127.5183 },
+  { code:"32", sido:"강원", lat:37.8228, lng:128.1555 },
+  { code:"33", sido:"충북", lat:36.8000, lng:127.7000 },
+  { code:"34", sido:"충남", lat:36.5184, lng:126.8000 },
+  { code:"35", sido:"경북", lat:36.4919, lng:128.8889 },
+  { code:"36", sido:"경남", lat:35.4606, lng:128.2132 },
+  { code:"37", sido:"전북", lat:35.7175, lng:127.1530 },
+  { code:"38", sido:"전남", lat:34.8679, lng:126.9910 },
+  { code:"39", sido:"제주", lat:33.4996, lng:126.5312 },
+];
+
+/* 인구감소지역(행정안전부 지정) — 황금 타일 2배 점수 기준.
+   ※ 최신 고시 기준으로 재검증 후 확정할 것. */
+const DEPOP_SET = new Set([
+  "부산|동구","부산|서구","부산|영도구",
+  "대구|남구","대구|서구",
+  "인천|강화군","인천|옹진군",
+  "경기|가평군","경기|연천군",
+  "강원|고성군","강원|삼척시","강원|양구군","강원|양양군","강원|영월군","강원|정선군",
+  "강원|철원군","강원|태백시","강원|평창군","강원|홍천군","강원|화천군","강원|횡성군",
+  "충북|괴산군","충북|단양군","충북|보은군","충북|영동군","충북|옥천군","충북|제천시",
+  "충남|공주시","충남|금산군","충남|논산시","충남|보령시","충남|부여군","충남|서천군",
+  "충남|예산군","충남|청양군","충남|태안군",
+  "전북|고창군","전북|김제시","전북|남원시","전북|무주군","전북|부안군","전북|순창군",
+  "전북|임실군","전북|장수군","전북|정읍시","전북|진안군",
+  "전남|강진군","전남|고흥군","전남|곡성군","전남|구례군","전남|담양군","전남|보성군",
+  "전남|신안군","전남|영광군","전남|영암군","전남|완도군","전남|장성군","전남|장흥군",
+  "전남|진도군","전남|함평군","전남|해남군","전남|화순군",
+  "경북|고령군","경북|군위군","경북|문경시","경북|봉화군","경북|상주시","경북|성주군",
+  "경북|안동시","경북|영덕군","경북|영양군","경북|영주시","경북|영천시","경북|울릉군",
+  "경북|울진군","경북|의성군","경북|청도군","경북|청송군","경북|칠곡군",
+  "경남|거창군","경남|고성군","경남|남해군","경남|밀양시","경남|산청군","경남|의령군",
+  "경남|창녕군","경남|하동군","경남|함양군","경남|함안군","경남|합천군",
+]);
+
+/* 게임판 타일도 같은 기준으로 황금 타일 판정 (기존 true는 유지) */
+BOARD.forEach(b => {
+  const sg = SIGUNGU.find(x => x.code === b.code);
+  if (sg && DEPOP_SET.has(sg.sido + "|" + sg.name)) b.depop = true;
+});
+
+const SIGUNGU_BY_SIDO = SIGUNGU.reduce((m, s) => { (m[s.sido] = m[s.sido] || []).push(s); return m; }, {});
+
+/* "창원시성산구" → "창원 성산구", "강릉시" → "강릉", "영도구" → "영도구" */
+function shortSgg(name) {
+  let n = String(name || "").replace(/^(.+시)(.+구)$/, "$1 $2").replace(/시 /, " ");
+  return n.replace(/(시|군)$/, "") || name;
+}
+
+/* TourAPI addr1 문자열 → 실제 시·군·구 경계 데이터(SIGUNGU) 매칭 */
+function sggFromAddr(addr, sidoHint) {
+  const parts = String(addr || "").trim().split(/\s+/);
+  const cands = SIGUNGU_BY_SIDO[sidoHint] || SIGUNGU;
+  const j1 = parts[1] || "", j2 = parts[2] || "";
+  let hit = cands.find(s => s.name === j1 + j2);
+  if (!hit) hit = cands.find(s => s.name === j1);
+  if (!hit && j1) hit = cands.find(s => s.name.startsWith(j1) || j1.startsWith(s.name));
+  if (!hit && cands.length === 1) hit = cands[0];
+  return hit || null;
+}
+
+function haversineKm(a, b) {
+  const R = 6371, rad = d => d * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/* TourAPI 분류코드/제목 → 앱의 5가지 테마로 분류 */
+const THEME_KW = {
+  sea:     ["해수욕장","해변","해안","바다","포구","등대","선착장","방파제","해상","어촌","해양","비치","항구","섬"],
+  nature:  ["계곡","폭포","호수","수목원","동굴","자연","저수지","습지","생태","숲","공원","정원","둘레길","산림","등산","고원","목장","꽃","약수"],
+  history: ["사찰","서원","향교","고택","궁","산성","왕릉","고분","유적","박물관","기념관","문화재","한옥","고인돌","역사","서당","전통","서원"],
+  city:    ["거리","시장","타워","야경","광장","골목","쇼핑","백화점","스카이","벽화","카페","전망대"],
+  food:    ["맛집","식당","먹거리","음식","횟집","국밥","한정식"],
+};
+function classifyThemes(it) {
+  const set = new Set();
+  const c1 = it.cat1 || "", c2 = it.cat2 || "", ct = String(it.contenttypeid || "");
+  if (c1 === "A01") set.add("nature");
+  if (c1 === "A02") {
+    if (c2 === "A0201" || c2 === "A0206") set.add("history");
+    if (c2 === "A0205" || c2 === "A0204") set.add("city");
+    if (c2 === "A0202" || c2 === "A0203") set.add("nature");
+  }
+  if (c1 === "A03") set.add("nature");
+  if (c1 === "A04") set.add("city");
+  if (c1 === "A05" || ct === "39") set.add("food");
+  if (ct === "14") set.add("history");
+  if (ct === "15") set.add("city");
+  const title = String(it.title || "");
+  Object.keys(THEME_KW).forEach(t => { if (THEME_KW[t].some(w => title.includes(w))) set.add(t); });
+  if (!set.size) set.add("nature");
+  const PRIORITY = ["sea","history","food","city","nature"];
+  return PRIORITY.filter(t => set.has(t));
+}
+const THEME_GRAD = {
+  sea:["#3AA8C1","#1E6F8E"], nature:["#4CA36B","#24704A"], history:["#C2704A","#8A4326"],
+  city:["#8B6FC8","#55408C"], food:["#DDA03C","#A96E17"],
+};
+const stripTags = (v) => String(v || "").replace(/<[^>]*>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
+
+/* 공통 호출기: JSON 파싱 + data.go.kr XML 오류응답 해석 + 타임아웃 */
+async function tourGet(op, params, timeoutMs = 9000) {
+  const q = new URLSearchParams(Object.assign({
+    serviceKey: TOUR_CFG.key, MobileOS: "ETC", MobileApp: TOUR_CFG.app, _type: "json",
+  }, params));
+  const raw = TOUR_BASE + "/" + op + "?" + q.toString();
+  const url = TOUR_CFG.proxy ? TOUR_CFG.proxy + encodeURIComponent(raw) : raw;
+  const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = setTimeout(() => ctrl && ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ctrl ? ctrl.signal : undefined, headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    if (text.trim().startsWith("<")) {
+      const m = text.match(/<returnAuthMsg>([^<]*)<\/returnAuthMsg>/) || text.match(/<errMsg>([^<]*)<\/errMsg>/);
+      throw new Error(m ? "인증키/파라미터 오류 · " + m[1] : "XML 오류 응답");
+    }
+    const json = JSON.parse(text);
+    const header = json && json.response && json.response.header;
+    if (header && header.resultCode && header.resultCode !== "0000") {
+      throw new Error(header.resultCode + " " + (header.resultMsg || ""));
+    }
+    const items = json && json.response && json.response.body && json.response.body.items;
+    if (!items || items === "") return [];
+    const it = items.item;
+    return Array.isArray(it) ? it : (it ? [it] : []);
+  } finally { clearTimeout(timer); }
+}
+
+/* 시도별 목록 캐시 (한 세션 동안 재호출 안 함) */
+const tourCache = new Map();
+function tourAreaPool(areaCode) {
+  if (tourCache.has(areaCode)) return tourCache.get(areaCode);
+  const listOf = (ct, rows) =>
+    tourGet("areaBasedList2", { areaCode, contentTypeId: ct, numOfRows: rows, pageNo: "1", arrange: "O" })
+      .catch(() => tourGet("areaBasedList2", { areaCode, contentTypeId: ct, numOfRows: rows, pageNo: "1" }));
+  const p = Promise.all([ listOf("12", "100"), listOf("14", "50").catch(() => []) ]).then(r => r[0].concat(r[1]));
+  tourCache.set(areaCode, p);
+  p.catch(() => tourCache.delete(areaCode));
+  return p;
+}
+
+function buildDest(it, origin) {
+  const area = TOUR_AREAS.find(a => a.code === String(it.areacode));
+  const sg = sggFromAddr(it.addr1, area && area.sido);
+  if (!sg) return null;
+  const lat = parseFloat(it.mapy), lng = parseFloat(it.mapx);
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  const title = stripTags(it.title);
+  if (!title) return null;
+  const themes = classifyThemes(it);
+  return {
+    contentid: String(it.contentid),
+    contenttypeid: String(it.contenttypeid || "12"),
+    title, sido: sg.sido, sigungu: shortSgg(sg.name), sgg: sg.code,
+    themes, depop: DEPOP_SET.has(sg.sido + "|" + sg.name),
+    lat, lng, addr: it.addr1 || "",
+    image: it.firstimage || it.firstimage2 || "",
+    grad: THEME_GRAD[themes[0]] || ["#4C7FCF", "#2A4E92"],
+    distanceKm: Math.round(haversineKm(origin, { lat, lng })),
+    overview: "", missions: [], source: "tourapi",
+  };
+}
+
+/* 데이터 접근 계층 — TourAPI 우선, 실패 시 샘플 폴백 */
+async function fetchDestinations({ themes, distCap, origin }) {
+  const org = origin || HOME_ORIGIN;
+  try {
+    if (!TOUR_CFG.key) throw new Error("인증키 미설정");
+    const scored = TOUR_AREAS.map(a => Object.assign({}, a, { d: haversineKm(org, a) })).sort((x, y) => x.d - y.d);
+    let cands = distCap >= 9999 ? scored : scored.filter(a => a.d <= distCap + 90);
+    if (!cands.length) cands = scored.slice(0, 3);
+    const picks = cands.slice().sort(() => Math.random() - 0.5).slice(0, Math.min(3, cands.length));
+    const lists = await Promise.all(picks.map(a => tourAreaPool(a.code).catch(() => [])));
+    const items = [].concat.apply([], lists);
+    if (!items.length) throw new Error("응답 결과 0건");
+
+    const seen = new Set();
+    const all = items.map(it => buildDest(it, org)).filter(d => {
+      if (!d || seen.has(d.contentid)) return false;
+      seen.add(d.contentid); return true;
+    });
+    if (!all.length) throw new Error("변환 가능한 목적지 없음");
+
+    let relaxed = false;
+    let pool = all.filter(d => d.distanceKm <= distCap);
+    if (themes.length) {
+      const t = pool.filter(d => d.themes.some(x => themes.includes(x)));
+      if (t.length) pool = t; else relaxed = true;
+    }
+    if (!pool.length) { pool = all; relaxed = true; }
+    return { pool, relaxed, source: "live", error: null };
+  } catch (e) {
+    let relaxed = false;
+    let pool = SAMPLE_POOL.filter(d => d.distanceKm <= distCap);
+    if (themes.length) {
+      const t = pool.filter(d => d.themes.some(x => themes.includes(x)));
+      if (t.length) pool = t; else relaxed = true;
+    }
+    if (!pool.length) { pool = SAMPLE_POOL.slice(); relaxed = true; }
+    return { pool, relaxed, source: "sample", error: String((e && e.message) || e) };
+  }
+}
+
+/* 확정된 목적지 1건만 상세 조회 — overview + 주변 맛집·체험으로 미션 3종 생성 */
+async function enrichDestination(d) {
+  if (!d || d.source !== "tourapi") return d;
+  const near = (ct, rows) => tourGet("locationBasedList2", {
+    mapX: String(d.lng), mapY: String(d.lat), radius: "10000",
+    contentTypeId: ct, numOfRows: rows, pageNo: "1", arrange: "E",
+  }).catch(() => []);
+  const r = await Promise.all([
+    tourGet("detailCommon2", { contentId: d.contentid }).catch(() => []),
+    near("39", "12"),
+    near("12", "15"),
+  ]);
+  const c = r[0][0] || {};
+  const pick = (arr) => {
+    const ok = arr.filter(x => x && x.title && String(x.contentid) !== d.contentid);
+    return ok.length ? stripTags(ok[Math.floor(Math.random() * ok.length)].title) : "";
+  };
+  const foodName = pick(r[1]), playName = pick(r[2]);
+  let ov = stripTags(c.overview);
+  if (ov.length > 190) ov = ov.slice(0, 188) + "…";
+  return Object.assign({}, d, {
+    overview: ov || (d.addr ? d.addr + " · 한국관광공사 관광정보 등록지" : d.sido + " " + d.sigungu + "의 관광지입니다."),
+    image: d.image || c.firstimage || "",
+    missions: [
+      { n: d.title + " 도착 인증", t: "명소" },
+      { n: foodName ? foodName + " 맛보기" : d.sigungu + " 로컬 맛집", t: "맛집" },
+      { n: playName ? playName + " 둘러보기" : d.sigungu + " 골목 산책", t: "체험" },
+    ],
+  });
 }
 async function verifyReceipt(dest){
-  await new Promise(r=>setTimeout(r,1500));
-  const store = (dest.missions.find(m=>m.t==="맛집")?.n)||"로컬 식당";
-  return { store, sido:dest.sido, sigungu:dest.sigungu, datetime:"오늘 13:24",
-    amount:(16+Math.floor(Math.random()*6)*3)*1000, checks:{region:true,recent:true,biz:true,unique:true} };
+  await new Promise(r=>setTimeout(r,1200));
+  const raw = (dest.missions.find(m=>m.t==="맛집")?.n)||"로컬 식당";
+  const store = raw.replace(/\s*(맛보기|한 상|맛집)$/,"").trim() || raw;
+  let biz = true, bizNote = "모의 검증 (카카오 로컬 미조회)", found = null;
+  if(isFinite(dest.lat) && isFinite(dest.lng)){
+    try{
+      const j = await kakaoLocal("search/keyword.json",{ query:store, x:String(dest.lng), y:String(dest.lat), radius:"20000", size:"5" });
+      found = ((j && j.documents) || [])[0] || null;
+      if(found){ biz = true; bizNote = "카카오 로컬 확인 · " + (found.road_address_name || found.address_name || found.place_name); }
+      else { biz = false; bizNote = "카카오 로컬에서 해당 상호를 찾지 못했어요"; }
+    }catch(e){ bizNote = "카카오 로컬 조회 실패 · " + ((e && e.message) || e); }
+  }
+  return { store: found ? found.place_name : store, sido:dest.sido, sigungu:dest.sigungu, datetime:"오늘 13:24",
+    amount:(16+Math.floor(Math.random()*6)*3)*1000, bizNote,
+    checks:{ region:true, recent:true, biz, unique:true } };
 }
 function verifyGps(){ return { ok:true, dist:60+Math.floor(Math.random()*140) }; }
+
+
+/* ═══════════════════════════════════════════════════════════
+   Kakao Developers 연동
+   · Maps JavaScript SDK  — 목적지 지도 / 마커
+   · Local REST API       — coord2regioncode(행정구역 대조), keyword(상호 확인)
+   · Kakao JS SDK Share   — 친구 초대 카카오톡 공유
+   ⚠ JS 키는 공개 전제(도메인 제한)로 클라이언트에 둡니다.
+     REST 키는 원래 서버 보관용입니다. 배포 시 proxy 경유로 옮기세요.
+   ═══════════════════════════════════════════════════════════ */
+const KAKAO_CFG = {
+  js:     "6e27633fb5456228af25c9378c67121e", // JavaScript 키
+  rest:   "b245592bb740223891be7e06088a6372", // REST API 키
+  native: "cfa0c5f456244e1da6b4775ec2e9eb96", // 네이티브 앱 키 (모바일 빌드용)
+  proxy:  "", // REST 호출 프록시 prefix
+};
+const SIDO_SHORT = {
+  "서울특별시":"서울","부산광역시":"부산","대구광역시":"대구","인천광역시":"인천",
+  "광주광역시":"광주","대전광역시":"대전","울산광역시":"울산","세종특별자치시":"세종",
+  "경기도":"경기","강원도":"강원","강원특별자치도":"강원","충청북도":"충북","충청남도":"충남",
+  "전라북도":"전북","전북특별자치도":"전북","전라남도":"전남","전남특별자치도":"전남",
+  "경상북도":"경북","경상남도":"경남","제주특별자치도":"제주",
+};
+
+/* Maps SDK 동적 로더 (autoload=false → kakao.maps.load 콜백 대기) */
+let kakaoSdkPromise = null;
+function loadKakaoSdk() {
+  if (typeof window === "undefined" || typeof document === "undefined") return Promise.reject(new Error("브라우저 환경이 아닙니다"));
+  if (window.kakao && window.kakao.maps && window.kakao.maps.Map) return Promise.resolve(window.kakao);
+  if (kakaoSdkPromise) return kakaoSdkPromise;
+  kakaoSdkPromise = new Promise((resolve, reject) => {
+    if (!KAKAO_CFG.js) { reject(new Error("JavaScript 키가 설정되지 않았습니다")); return; }
+    const ID = "kakao-maps-sdk";
+    let el = document.getElementById(ID);
+    const timer = setTimeout(() => reject(new Error("SDK 로드 타임아웃 · 플랫폼 도메인 등록을 확인하세요")), 12000);
+    const onReady = () => {
+      try { window.kakao.maps.load(() => { clearTimeout(timer); resolve(window.kakao); }); }
+      catch (e) { clearTimeout(timer); reject(new Error("SDK 초기화 실패 · " + ((e && e.message) || e))); }
+    };
+    const onFail = () => { clearTimeout(timer); reject(new Error("SDK 로드 실패 · 도메인 미등록 또는 키 오류")); };
+    if (!el) {
+      el = document.createElement("script");
+      el.id = ID; el.async = true;
+      el.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=" + KAKAO_CFG.js + "&autoload=false&libraries=services";
+      el.addEventListener("load", onReady);
+      el.addEventListener("error", onFail);
+      document.head.appendChild(el);
+    } else if (window.kakao && window.kakao.maps) { onReady(); }
+    else { el.addEventListener("load", onReady); el.addEventListener("error", onFail); }
+  });
+  kakaoSdkPromise.catch(() => { kakaoSdkPromise = null; });
+  return kakaoSdkPromise;
+}
+
+/* Local REST API 공통 호출기 */
+async function kakaoLocal(path, params, timeoutMs = 8000) {
+  if (!KAKAO_CFG.rest) throw new Error("REST 키가 설정되지 않았습니다");
+  const raw = "https://dapi.kakao.com/v2/local/" + path + "?" + new URLSearchParams(params).toString();
+  const url = KAKAO_CFG.proxy ? KAKAO_CFG.proxy + encodeURIComponent(raw) : raw;
+  const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = setTimeout(() => ctrl && ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: "KakaoAK " + KAKAO_CFG.rest },
+      signal: ctrl ? ctrl.signal : undefined,
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status + (res.status === 401 ? " · REST 키 확인" : res.status === 403 ? " · 사용 권한/도메인 확인" : ""));
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+
+/* 좌표 → 행정구역 (도착 인증 대조용) */
+async function kakaoRegionOf(lat, lng) {
+  const j = await kakaoLocal("geo/coord2regioncode.json", { x: String(lng), y: String(lat) });
+  const docs = (j && j.documents) || [];
+  const doc = docs.find(d => d.region_type === "B") || docs[0];
+  if (!doc) throw new Error("행정구역 조회 결과 없음");
+  return {
+    sido: SIDO_SHORT[doc.region_1depth_name] || doc.region_1depth_name,
+    sigungu: doc.region_2depth_name || "",
+    code: doc.code, full: doc.address_name,
+  };
+}
+
+function kakaoRouteUrl(d) {
+  const name = encodeURIComponent(String(d.title || "목적지").replace(/,/g, " "));
+  return "https://map.kakao.com/link/to/" + name + "," + d.lat + "," + d.lng;
+}
+
+function getPosition(timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) { reject(new Error("이 기기에서 위치 서비스를 쓸 수 없습니다")); return; }
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) }),
+      e => reject(new Error(e && e.code === 1 ? "위치 권한이 거부되었습니다" : "위치를 확인하지 못했습니다")),
+      { enableHighAccuracy: true, timeout, maximumAge: 0 });
+  });
+}
+
+/* 실제 GPS + 카카오 행정구역 대조 도착 인증 */
+async function verifyArrivalReal(trip, radiusM) {
+  const pos = await getPosition();
+  const hasCoord = isFinite(trip.lat) && isFinite(trip.lng);
+  const dist = hasCoord ? Math.round(haversineKm(pos, { lat: trip.lat, lng: trip.lng }) * 1000) : null;
+  let region = null, regionOk = null;
+  try {
+    region = await kakaoRegionOf(pos.lat, pos.lng);
+    const a = shortSgg(region.sigungu), b = String(trip.sigungu || "");
+    regionOk = region.sido === trip.sido && (a === b || a.startsWith(b) || b.startsWith(a));
+  } catch (e) { region = null; }
+
+  if (dist != null && dist <= radiusM) return { ok: true, dist, acc: pos.acc, region, regionOk, mode: "live" };
+  if (dist == null && regionOk === true) return { ok: true, dist: null, acc: pos.acc, region, regionOk, mode: "live" };
+  const where = region ? region.full : "행정구역 확인 불가";
+  const reason = dist != null
+    ? "목적지에서 " + (dist >= 1000 ? (dist / 1000).toFixed(1) + "km" : dist + "m") + " 떨어져 있어요 (필요: " + radiusM + "m 이내) · 현재 " + where
+    : "현재 위치가 " + where + " 로 확인돼요 · 목적지 " + trip.sido + " " + trip.sigungu + " 와 일치하지 않습니다";
+  return { ok: false, dist, acc: pos.acc, region, regionOk, reason, mode: "live" };
+}
+
+/* Kakao JS SDK (공유) */
+let kakaoSharePromise = null;
+function loadKakaoShare() {
+  if (typeof window === "undefined") return Promise.reject(new Error("브라우저 환경이 아닙니다"));
+  if (window.Kakao && window.Kakao.isInitialized && window.Kakao.isInitialized()) return Promise.resolve(window.Kakao);
+  if (kakaoSharePromise) return kakaoSharePromise;
+  kakaoSharePromise = new Promise((resolve, reject) => {
+    const ID = "kakao-js-sdk";
+    const init = () => {
+      try {
+        if (!window.Kakao) throw new Error("SDK 객체 없음");
+        if (!window.Kakao.isInitialized()) window.Kakao.init(KAKAO_CFG.js);
+        resolve(window.Kakao);
+      } catch (e) { reject(new Error("초기화 실패 · " + ((e && e.message) || e))); }
+    };
+    if (window.Kakao) { init(); return; }
+    const el = document.createElement("script");
+    el.id = ID; el.async = true;
+    el.src = "https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js";
+    el.integrity = ""; el.crossOrigin = "anonymous";
+    el.addEventListener("load", init);
+    el.addEventListener("error", () => reject(new Error("Kakao JS SDK 로드 실패")));
+    document.head.appendChild(el);
+  });
+  kakaoSharePromise.catch(() => { kakaoSharePromise = null; });
+  return kakaoSharePromise;
+}
+
+/* 카카오맵 컴포넌트 — 로드 실패 시 사유를 보여주는 대체 박스 */
+function KakaoMap({ lat, lng, title, height = 160, level = 5 }) {
+  const ref = useRef(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let dead = false;
+    if (!isFinite(lat) || !isFinite(lng)) { setErr("좌표 정보가 없는 목적지예요"); return; }
+    setErr("");
+    loadKakaoSdk().then(kakao => {
+      if (dead || !ref.current) return;
+      const center = new kakao.maps.LatLng(lat, lng);
+      const map = new kakao.maps.Map(ref.current, { center, level });
+      const marker = new kakao.maps.Marker({ position: center });
+      marker.setMap(map);
+      const label = String(title || "").replace(/[<>"'&]/g, "");
+      if (label) {
+        new kakao.maps.InfoWindow({
+          content: '<div style="padding:5px 9px;font-size:12px;font-weight:700;white-space:nowrap">' + label + '</div>',
+        }).open(map, marker);
+      }
+      map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+    }).catch(e => { if (!dead) setErr(String((e && e.message) || e)); });
+    return () => { dead = true; };
+  }, [lat, lng, title, level]);
+
+  if (err) return (<div style={{ ...S.mapFallback, height }}><span style={{ fontSize: 20 }}>🗺️</span><span style={{ fontWeight: 800 }}>카카오맵을 불러오지 못했어요</span><span style={{ opacity: .8 }}>{err}</span></div>);
+  return <div ref={ref} style={{ width: "100%", height, borderRadius: 14, overflow: "hidden", border: "1px solid var(--line)", background: "var(--paper-2)" }} />;
+}
 
 function DieFace({ n, size=64 }) {
   const P = {1:[4],2:[0,8],3:[0,4,8],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8]}[n]||[4];
   return (<div style={{width:size,height:size,background:"var(--paper)",borderRadius:size*0.22,boxShadow:"0 8px 0 rgba(20,33,58,.18), inset 0 0 0 2px rgba(20,33,58,.10)",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gridTemplateRows:"1fr 1fr 1fr",padding:size*0.13}}>
     {Array.from({length:9}).map((_,i)=>(<div key={i} style={{display:"grid",placeItems:"center"}}><span style={{width:"58%",height:"58%",borderRadius:"50%",background:P.includes(i)?"var(--ink)":"transparent"}}/></div>))}</div>);
-}
-function DicePips({ n, size }){
-  const P = {1:[4],2:[0,8],3:[0,4,8],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8]}[n]||[4];
-  return (<div style={{width:"100%",height:"100%",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gridTemplateRows:"1fr 1fr 1fr",padding:size*0.13,boxSizing:"border-box"}}>
-    {Array.from({length:9}).map((_,i)=>(<div key={i} style={{display:"grid",placeItems:"center"}}><span style={{width:"56%",height:"56%",borderRadius:"50%",background:P.includes(i)?"#16223F":"transparent"}}/></div>))}</div>);
-}
-function Dice3D({ n, rolling, size=96 }){
-  const h = size/2;
-  const show = {1:"rotateX(-18deg) rotateY(0deg)",6:"rotateX(-18deg) rotateY(180deg)",3:"rotateX(-18deg) rotateY(-90deg)",4:"rotateX(-18deg) rotateY(90deg)",2:"rotateX(72deg) rotateY(0deg)",5:"rotateX(-108deg) rotateY(0deg)"}[n] || "rotateX(-18deg) rotateY(0deg)";
-  const faces = [
-    {k:1,t:`translateZ(${h}px)`},
-    {k:6,t:`rotateY(180deg) translateZ(${h}px)`},
-    {k:3,t:`rotateY(90deg) translateZ(${h}px)`},
-    {k:4,t:`rotateY(-90deg) translateZ(${h}px)`},
-    {k:2,t:`rotateX(90deg) translateZ(${h}px)`},
-    {k:5,t:`rotateX(-90deg) translateZ(${h}px)`},
-  ];
-  const faceStyle = {position:"absolute",width:size,height:size,background:"linear-gradient(150deg,#FBF6EA,#E7DCC4)",borderRadius:size*0.18,boxShadow:"inset 0 0 0 2px rgba(20,33,58,.08)",backfaceVisibility:"hidden"};
-  return (
-    <div style={{width:size,height:size,perspective:size*4,margin:"0 auto"}}>
-      <div className={rolling?"dice-cube rolling":"dice-cube"} style={{width:size,height:size,position:"relative",transformStyle:"preserve-3d",transform:rolling?undefined:show}}>
-        {faces.map(f=>(<div key={f.k} style={{...faceStyle,transform:f.t}}><DicePips n={f.k} size={size}/></div>))}
-      </div>
-    </div>
-  );
 }
 
 /* ───────── 메인 앱 ───────── */
@@ -198,10 +613,18 @@ export default function App(){
   const [result,setResult] = useState(null);
   const [started,setStarted] = useState(false);
   const [shareOpen,setShareOpen] = useState(false);
-  const [cardsOpen,setCardsOpen] = useState(false);
+  const [origin,setOrigin] = useState(HOME_ORIGIN);
+  const [apiStatus,setApiStatus] = useState({ mode:"idle", msg:"" });
+  const originRef = useRef(HOME_ORIGIN);
   const rollTimer = useRef(null);
 
   useEffect(()=>()=>clearInterval(rollTimer.current),[]);
+  useEffect(()=>{
+    if(typeof navigator==="undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (p)=>{ const o={lat:p.coords.latitude,lng:p.coords.longitude,label:"현재 위치"}; originRef.current=o; setOrigin(o); },
+      ()=>{}, { enableHighAccuracy:false, timeout:7000, maximumAge:600000 });
+  },[]);
   function flash(msg){ setToast(msg); setTimeout(()=>setToast(null),2300); }
   const memberById = (id)=> members.find(m=>m.id===id);
   const ownerColor = (id)=> id? (memberById(id)?.color||"var(--paper-2)") : "var(--paper-2)";
@@ -214,17 +637,35 @@ export default function App(){
 
   async function rollDice(){
     if(rollsLeft<=0) return;
+    const t0 = Date.now();
     setRollsLeft(r=>r-1); setDroppedCard(null); setUseExempt(false); setPhase("rolling");
     clearInterval(rollTimer.current);
     rollTimer.current = setInterval(()=> setDieN(Math.floor(Math.random()*6)+1), 80);
-    const { pool, relaxed } = await fetchDestinations({ themes, distCap: DIST_STEPS[distIdx].cap });
-    const pick = pool[Math.floor(Math.random()*pool.length)];
+
+    let pick=null, relaxed=false, source="sample", error=null;
+    try{
+      const r = await fetchDestinations({ themes, distCap: DIST_STEPS[distIdx].cap, origin: originRef.current });
+      relaxed = r.relaxed; source = r.source; error = r.error;
+      pick = r.pool[Math.floor(Math.random()*r.pool.length)] || null;
+      if(pick && pick.source==="tourapi"){
+        try { pick = await enrichDestination(pick); }
+        catch(e){ pick = Object.assign({}, pick, {
+          overview: pick.addr || (pick.sido+" "+pick.sigungu),
+          missions: [{n:pick.title+" 도착 인증",t:"명소"},{n:pick.sigungu+" 로컬 맛집",t:"맛집"},{n:pick.sigungu+" 골목 산책",t:"체험"}],
+        }); }
+      }
+    }catch(e){ error = String((e&&e.message)||e); }
+
+    if(!pick){ pick = SAMPLE_POOL[Math.floor(Math.random()*SAMPLE_POOL.length)]; source="sample"; relaxed=true; }
+    setApiStatus({ mode:source, msg:error||"" });
+
+    const wait = Math.max(0, 1150 - (Date.now()-t0));
     setTimeout(()=>{
       clearInterval(rollTimer.current); setDieN(Math.floor(Math.random()*6)+1);
       setCandidate(pick); setRelaxedMsg(relaxed);
       if(Math.random()<0.35){ const card = EVENT_CARDS[Math.floor(Math.random()*EVENT_CARDS.length)]; setDroppedCard(card); setInventory(inv=>[...inv,card]); }
       setPhase("sealed");
-    }, 1150);
+    }, wait);
   }
   function depart(){ setPhase("opening"); setTimeout(()=> setPhase("revealed"), 1250); }
 
@@ -292,10 +733,10 @@ export default function App(){
           <div style={S.coinPill}>🪙 {coins}</div>
         </header>
         <main style={S.body} className="scroll">
-          {tab==="main" && <MainScreen {...{themes,toggleTheme,distIdx,setDistIdx,duration,setDuration,budget,setBudget,rollsLeft,rollDice,activeTrip,openVerify:()=>setVerifyOpen(true),finishTrip}}/>}
+          {tab==="main" && <MainScreen {...{themes,toggleTheme,distIdx,setDistIdx,duration,setDuration,budget,setBudget,rollsLeft,rollDice,activeTrip,openVerify:()=>setVerifyOpen(true),finishTrip,origin,apiStatus}}/>}
           {tab==="map" && <MapScreen {...{ownership,ownerColor,memberById,members,room,createRoom,joinRoom,openShare:()=>setShareOpen(true),leaveRoom,score,memberScore,ownedCount,myRegionCount,activeTrip,flash}}/>}
           {tab==="rank" && <RankScreen {...{myRoomScore,myRoomRegions,room,memberCount:members.length}}/>}
-          {tab==="my" && <MyScreen {...{score,coins,inventory,ownedCount,trips,cards,room,resetDemo,openCards:()=>setCardsOpen(true)}}/>}
+          {tab==="my" && <MyScreen {...{score,coins,inventory,ownedCount,trips,cards,room,resetDemo,apiStatus,origin}}/>}
         </main>
         <nav style={S.tabbar}>
           {[["main","🎲","메인"],["map","🗺️","지도"],["rank","🏆","랭킹"],["my","👤","마이"]].map(([id,ic,lb])=>(
@@ -307,7 +748,7 @@ export default function App(){
 
         {phase!=="main" && (
           <div style={S.overlay} className="overlay-in">
-            {phase==="rolling" && (<div style={{textAlign:"center"}}><Dice3D n={dieN} rolling={true} size={104}/><p style={{...S.olHint,marginTop:24}}>주사위를 굴리는 중…</p></div>)}
+            {phase==="rolling" && (<div style={{textAlign:"center"}}><div className="die-shake"><DieFace n={dieN} size={92}/></div><p style={S.olHint}>목적지를 봉투에 담는 중…</p></div>)}
             {phase==="sealed" && candidate && (
               <div style={{textAlign:"center",width:"100%"}} className="pop-in">
                 {droppedCard && (<div style={S.cardDrop} className="card-drop"><span style={{fontSize:22}}>{droppedCard.icon}</span><div style={{textAlign:"left"}}><div style={{fontSize:11,color:"var(--gold)",fontWeight:800}}>이벤트 카드 획득!</div><div style={{fontSize:13,fontWeight:700,color:"var(--paper)"}}>{droppedCard.name}</div></div></div>)}
@@ -321,7 +762,7 @@ export default function App(){
               <div style={{width:"100%"}} className="reveal-in">
                 <p style={{textAlign:"center",color:"var(--paper)",opacity:.7,fontSize:13,marginBottom:10}}>당신의 목적지는…</p>
                 <div style={S.destCard}>
-                  <div style={{...S.destImg, background:`linear-gradient(135deg, ${candidate.grad[0]}, ${candidate.grad[1]})`}}>
+                  <div style={{...S.destImg, background: candidate.image ? `linear-gradient(180deg, rgba(10,18,36,0) 40%, rgba(10,18,36,.62) 100%), url(${candidate.image}) center/cover no-repeat` : `linear-gradient(135deg, ${candidate.grad[0]}, ${candidate.grad[1]})`}}>
                     {candidate.depop && <span style={S.goldTag}>★ 황금 타일 · 2배 점수</span>}
                     <div style={S.destImgInner}><span style={{fontSize:13,opacity:.9}}>{candidate.sido} · {candidate.sigungu}</span><h2 style={S.destName}>{candidate.title}</h2></div></div>
                   <div style={{padding:"15px 18px"}}>
@@ -329,6 +770,10 @@ export default function App(){
                      : destOwner==="me" ? (<div style={{...S.ownBanner,background:"rgba(30,142,138,.10)",border:"1px solid rgba(30,142,138,.35)"}}><span style={{fontSize:18}}>🏠</span><span style={{fontSize:13,color:"var(--ink)",fontWeight:700}}>내 영토 재방문 · +50점</span></div>)
                      : (<div style={{...S.ownBanner,background:"rgba(227,169,44,.12)",border:"1px solid rgba(227,169,44,.45)"}}><span style={{fontSize:18}}>🚩</span><span style={{fontSize:13,color:"var(--ink)",fontWeight:700}}>미점령 지역 · 인증하면 {candidate.depop?200:100}점</span></div>)}
                     <p style={S.overview}>{candidate.overview}</p>
+                    {isFinite(candidate.lat) && isFinite(candidate.lng) && (<div style={{marginTop:12}}>
+                      <KakaoMap lat={candidate.lat} lng={candidate.lng} title={candidate.title} height={150} level={5}/>
+                      <a href={kakaoRouteUrl(candidate)} target="_blank" rel="noreferrer" style={S.routeBtn}>🚗 카카오맵으로 길찾기</a>
+                    </div>)}
                     <div style={S.metaRow}><Meta k="거리" v={`${candidate.distanceKm}km`}/><Meta k="일정" v={duration}/><Meta k="기본 점수" v={`+${destOwner==="me"?50:tollDue?40:(candidate.depop?200:100)}`} hi/></div>
                     <p style={S.missionHead}>도착하면 인증할 미션</p>
                     <div style={{display:"flex",flexDirection:"column",gap:8}}>{candidate.missions.map((m,i)=>(<div key={i} style={S.mission}><span style={S.missionTag}>{m.t}</span><span style={{fontSize:13.5,color:"var(--ink)"}}>{m.n}</span><span style={{marginLeft:"auto",fontSize:11.5,color:"var(--ink-soft)"}}>{methodFor(m.t)==="receipt"?"🧾 영수증":"📍 GPS"}</span></div>))}</div>
@@ -339,7 +784,6 @@ export default function App(){
         {verifyOpen && activeTrip && (<VerifyFlow trip={activeTrip} onMissionDone={setMissionDone} onDone={()=>setVerifyOpen(false)} memberById={memberById} flash={flash}/>)}
         {result && activeTrip && (<ResultOverlay trip={activeTrip} result={result} onClose={closeResult}/>)}
         {shareOpen && (<ShareModal room={room} onClose={()=>setShareOpen(false)} onAccept={()=>{ inviteFriends(); setShareOpen(false); }} flash={flash}/>)}
-        {cardsOpen && (<CardsModal cards={cards} onClose={()=>setCardsOpen(false)}/>)}
         {toast && <div style={S.toast} className="toast-in">{toast}</div>}
       </div>
     </div>
@@ -360,6 +804,8 @@ function VerifyFlow({ trip, onMissionDone, onDone, memberById, flash }){
   const [step,setStep] = useState(trip.missions[arrivalIdx]?.done?1:0);
   const [scanning,setScanning] = useState(false);
   const [parsed,setParsed] = useState(null);
+  const [locating,setLocating] = useState(false);
+  const [locMsg,setLocMsg] = useState("");
   const fileRef = useRef(null); const pendRef = useRef(-1);
   const arrival = trip.missions[arrivalIdx];
   const others = trip.missions.map((m,i)=>({...m,i})).filter(o=>o.i!==arrivalIdx);
@@ -367,11 +813,29 @@ function VerifyFlow({ trip, onMissionDone, onDone, memberById, flash }){
   const doneCount = trip.missions.filter(m=>m.done).length;
   const allDone = trip.missions.every(m=>m.done);
 
-  function doArrival(){ const r=verifyGps(); onMissionDone(arrivalIdx,{gps:r}); flash(`도착 확인 · 반경 ${r.dist}m`); setTimeout(()=>setStep(1),600); }
-  function doGps(i){ const r=verifyGps(); onMissionDone(i,{gps:r}); flash(`인증 완료 · 반경 ${r.dist}m`); }
+  async function doArrival(){
+    setLocating(true); setLocMsg("");
+    try{
+      const r = await verifyArrivalReal(trip, 300);
+      if(r.ok){ onMissionDone(arrivalIdx,{gps:r}); flash(r.dist!=null?`도착 확인 · ${r.dist}m`:"도착 확인 · 행정구역 일치"); setTimeout(()=>setStep(1),600); }
+      else setLocMsg(r.reason);
+    }catch(e){ setLocMsg(String((e&&e.message)||e)); }
+    setLocating(false);
+  }
+  function demoArrival(){ const r=verifyGps(); onMissionDone(arrivalIdx,{gps:{...r,mode:"demo"}}); setLocMsg(""); flash(`(데모) 도착 확인 · 반경 ${r.dist}m`); setTimeout(()=>setStep(1),600); }
+  async function doGps(i){
+    setLocating(true);
+    try{
+      const r = await verifyArrivalReal(trip, 3000);
+      if(r.ok){ onMissionDone(i,{gps:r}); flash(r.dist!=null?`인증 완료 · ${r.dist}m`:"인증 완료 · 행정구역 일치"); }
+      else flash(r.reason);
+    }catch(e){ flash(String((e&&e.message)||e)); }
+    setLocating(false);
+  }
+  function demoGps(i){ const r=verifyGps(); onMissionDone(i,{gps:{...r,mode:"demo"}}); flash(`(데모) 인증 완료 · 반경 ${r.dist}m`); }
   function pickReceipt(i){ pendRef.current=i; fileRef.current?.click(); }
   async function onFile(){ const i=pendRef.current; if(i<0) return; setScanning(true); setParsed(null); const data=await verifyReceipt(trip); setScanning(false); setParsed({idx:i,data}); }
-  function acceptReceipt(){ if(!Object.values(parsed.data.checks).every(Boolean)){ flash("영수증 검증 실패 · 다시 시도"); return; } onMissionDone(parsed.idx,{receipt:parsed.data}); setParsed(null); }
+  function acceptReceipt(force){ if(!force && !Object.values(parsed.data.checks).every(Boolean)){ flash("검증 실패 항목이 있어요"); return; } onMissionDone(parsed.idx,{receipt:parsed.data}); setParsed(null); }
 
   return (
     <div style={S.vfScreen} className="overlay-in">
@@ -405,9 +869,16 @@ function VerifyFlow({ trip, onMissionDone, onDone, memberById, flash }){
             {trip.depop && <span style={S.goldTag}>★ 황금 타일</span>}
             <div style={S.destImgInner}><span style={{fontSize:12,opacity:.9}}>도착 미션</span><h3 style={{...S.destName,fontSize:19}}>{arrival.n}</h3></div>
           </div>
-          <p style={{fontSize:13.5,color:"var(--ink-soft)",lineHeight:1.6,marginBottom:18}}>목적지에 도착했다면 현재 위치로 도착을 인증하세요. 반경 200m 안에서만 인증되며, 도착 인증이 끝나야 점령할 수 있어요.</p>
-          {!arrival.done ? (<button onClick={doArrival} style={S.vfPrimary}>📍 현재 위치로 도착 인증</button>)
-                         : (<div style={S.doneNote}>✅ 도착 확인 · 반경 {arrival.gps?.dist}m 이내</div>)}
+          {isFinite(trip.lat) && isFinite(trip.lng) && (<div style={{marginBottom:14}}>
+            <KakaoMap lat={trip.lat} lng={trip.lng} title={trip.title} height={170} level={4}/>
+            <a href={kakaoRouteUrl(trip)} target="_blank" rel="noreferrer" style={S.routeBtn}>🚗 카카오맵으로 길찾기</a>
+          </div>)}
+          <p style={{fontSize:13.5,color:"var(--ink-soft)",lineHeight:1.6,marginBottom:18}}>목적지에 도착했다면 현재 위치로 도착을 인증하세요. GPS 좌표와 카카오 행정구역을 함께 대조하며, 반경 300m 안에서만 인증돼요.</p>
+          {!arrival.done ? (<>
+            <button onClick={doArrival} disabled={locating} style={{...S.vfPrimary,opacity:locating?.6:1}}>{locating?"위치 확인 중…":"📍 현재 위치로 도착 인증"}</button>
+            {locMsg && (<div style={S.locFail}><b style={{color:"var(--stamp)"}}>인증되지 않았어요</b><span>{locMsg}</span>
+              <button onClick={demoArrival} style={S.demoBtn}>(데모) 도착했다고 가정하고 진행 →</button></div>)}
+          </>) : (<div style={S.doneNote}>{arrival.gps?.mode==="demo"?"✅ (데모) 도착 확인":"✅ 도착 확인"}{arrival.gps?.dist!=null?` · 반경 ${arrival.gps.dist}m`:""}{arrival.gps?.region?` · ${arrival.gps.region.full}`:""}</div>)}
         </>)}
 
         {step===1 && (<>
@@ -419,7 +890,10 @@ function VerifyFlow({ trip, onMissionDone, onDone, memberById, flash }){
                 <span style={{fontSize:20}}>{m.done?"✅":m.method==="receipt"?"🧾":"📍"}</span>
                 <div style={{flex:1}}><span style={{fontSize:14,fontWeight:800,color:"var(--ink)"}}>{m.n}</span>
                   <div style={{fontSize:11.5,color:"var(--ink-soft)"}}>{m.done?(m.method==="receipt"?`${m.receipt.store} · ${m.receipt.amount.toLocaleString()}원`:`반경 ${m.gps.dist}m 인증`):(m.method==="receipt"?"영수증으로 인증":"위치로 인증")}</div></div>
-                {!m.done && <button onClick={()=>m.method==="receipt"?pickReceipt(m.i):doGps(m.i)} style={S.vBtn}>{m.method==="receipt"?"영수증":"위치 확인"}</button>}
+                {!m.done && <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+                  <button onClick={()=>m.method==="receipt"?pickReceipt(m.i):doGps(m.i)} disabled={locating} style={{...S.vBtn,opacity:locating&&m.method!=="receipt"?.6:1}}>{m.method==="receipt"?"영수증":(locating?"확인 중…":"위치 확인")}</button>
+                  {m.method!=="receipt" && <button onClick={()=>demoGps(m.i)} style={S.demoMini}>데모</button>}
+                </div>}
               </div>
               {scanning && pendRef.current===m.i && <div style={S.scanBox}><span className="spin" style={{fontSize:16}}>◌</span> 영수증 분석 중… (OCR)</div>}
             </div>))}
@@ -428,7 +902,9 @@ function VerifyFlow({ trip, onMissionDone, onDone, memberById, flash }){
             <div style={{display:"flex",justifyContent:"space-between",borderBottom:"1px dashed var(--line)",paddingBottom:8,marginBottom:8}}><b style={{color:"var(--ink)"}}>{parsed.data.store}</b><span style={{fontSize:12,color:"var(--ink-soft)"}}>{parsed.data.datetime}</span></div>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:13,color:"var(--ink-soft)",marginBottom:10}}><span>{parsed.data.sido} {parsed.data.sigungu}</span><b style={{color:"var(--ink)"}}>{parsed.data.amount.toLocaleString()}원</b></div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}><Chk ok={parsed.data.checks.region} t="목적지 지역 일치"/><Chk ok={parsed.data.checks.recent} t="최근 영수증"/><Chk ok={parsed.data.checks.biz} t="사업자 진위"/><Chk ok={parsed.data.checks.unique} t="중복 아님"/></div>
-            <button onClick={acceptReceipt} style={S.acceptBtn}>이 영수증으로 인증</button></div>)}
+            {parsed.data.bizNote && <p style={{fontSize:11,color:"var(--ink-soft)",lineHeight:1.5,marginBottom:10}}>ⓘ {parsed.data.bizNote}</p>}
+            <button onClick={()=>acceptReceipt(false)} style={S.acceptBtn}>이 영수증으로 인증</button>
+            {!Object.values(parsed.data.checks).every(Boolean) && <button onClick={()=>acceptReceipt(true)} style={{...S.demoBtn,marginTop:8,width:"100%"}}>(데모) 검증 무시하고 진행 →</button>}</div>)}
         </>)}
       </div>
 
@@ -475,7 +951,7 @@ function Splash({onStart}){
       </div>
       <div style={{padding:"0 26px 30px"}}>
         <button onClick={onStart} style={S.splashBtn}>여행 시작 🧳</button>
-        <p style={{textAlign:"center",fontSize:11,color:"rgba(255,255,255,.72)",marginTop:12}}>전국 시·군·구 땅따먹기</p>
+        <p style={{textAlign:"center",fontSize:11,color:"rgba(255,255,255,.72)",marginTop:12}}>전국 시·군·구 땅따먹기 · 시즌 1</p>
       </div>
     </div>
   );
@@ -574,6 +1050,16 @@ function ShareModal({ room, onClose, onAccept, flash }){
     else { try{ navigator.clipboard.writeText(link); }catch(e){} flash("초대 링크가 복사되었어요"); }
   }
   function copy(){ try{ navigator.clipboard.writeText(link); }catch(e){} flash("초대 링크 복사 완료"); }
+  async function shareKakao(){
+    try{
+      const Kakao = await loadKakaoShare();
+      Kakao.Share.sendDefault({
+        objectType:"feed",
+        content:{ title:"대한민국 부루마블", description:`방 코드 ${code} · 함께 전국을 점령해요!`, imageUrl:"https://placehold.co/800x400/131F3C/F4EDDF/png?text=%EB%8C%80%ED%95%9C%EB%AF%BC%EA%B5%AD+%EB%B6%80%EB%A3%A8%EB%A7%88%EB%B8%94", link:{ mobileWebUrl:link, webUrl:link } },
+        buttons:[{ title:"방 참여하기", link:{ mobileWebUrl:link, webUrl:link } }],
+      });
+    }catch(e){ flash("카카오 공유 불가 · " + ((e&&e.message)||e)); share(); }
+  }
   return (
     <div style={S.modalScrim} onClick={onClose}><div style={S.sheet} onClick={e=>e.stopPropagation()} className="sheet-in">
       <div style={S.sheetGrab}/>
@@ -581,9 +1067,10 @@ function ShareModal({ room, onClose, onAccept, flash }){
       <p style={{fontSize:12.5,color:"var(--ink-soft)",textAlign:"center",margin:"4px 0 16px"}}>아래 링크나 코드를 친구에게 공유하세요</p>
       <div style={S.shareCode}><span style={{fontSize:11,color:"var(--ink-soft)"}}>방 코드</span><span style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:22,color:"var(--ink)",letterSpacing:1}}>{code}</span></div>
       <div style={{display:"flex",gap:8,marginTop:12}}>
-        <button onClick={share} style={S.shareBtn}>📤 공유하기</button>
+        <button onClick={shareKakao} style={{...S.shareBtn,background:"#FEE500",color:"#191600"}}>💬 카카오톡으로 초대</button>
         <button onClick={copy} style={S.shareGhost}>링크 복사</button>
       </div>
+      <button onClick={share} style={{...S.shareGhost,width:"100%",marginTop:8}}>📤 다른 앱으로 공유</button>
       <div style={S.shareTargets}>{["💬","✉️","🔗","📷"].map((ic,i)=><button key={i} onClick={share} style={S.shareTarget}>{ic}</button>)}</div>
       <button onClick={onAccept} style={S.shareDemo}>(데모) 친구가 초대를 수락했다고 가정하기 →</button>
       <button onClick={onClose} style={{...S.roomGhost,marginTop:8,width:"100%"}}>닫기</button>
@@ -591,38 +1078,23 @@ function ShareModal({ room, onClose, onAccept, flash }){
   );
 }
 
-function CardsModal({ cards, onClose }){
-  return (
-    <div style={S.vfScreen} className="overlay-in">
-      <div style={S.vfHead}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <h2 style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:20,color:"var(--ink)"}}>인증 카드 <span style={{fontSize:13,fontFamily:"Pretendard",color:"var(--ink-soft)",fontWeight:600}}>{cards.length}장</span></h2>
-          <button onClick={onClose} style={S.vfClose}>닫기</button>
-        </div>
-      </div>
-      <div style={{flex:1,overflowY:"auto",padding:"16px 18px"}} className="scroll">
-        {cards.length===0 ? <p style={S.empty}>아직 카드가 없어요.</p> :
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {cards.map((c,i)=>(<div key={i} style={S.collCard}>
-            <div style={{...S.collImg,background:`linear-gradient(135deg,${c.grad[0]},${c.grad[1]})`}}><span style={S.collType}>{c.type==="영수증"?"🧾":"📷"} {c.type}</span>{c.depop && <span style={S.collGold}>★</span>}</div>
-            <div style={{padding:"8px 9px"}}><div style={{fontSize:12,fontWeight:800,color:"var(--ink)",lineHeight:1.2}}>{c.title}</div><div style={{fontSize:10.5,color:"var(--ink-soft)",marginTop:2}}>{c.place}</div></div>
-          </div>))}
-        </div>}
+/* ───────── 메인 ───────── */
+function MainScreen({themes,toggleTheme,distIdx,setDistIdx,duration,setDuration,budget,setBudget,rollsLeft,rollDice,activeTrip,openVerify,finishTrip,origin,apiStatus}){
+  return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <div style={S.hello}>
+      <p style={{fontSize:13,color:"var(--ink-soft)"}}>오늘의 출발지</p>
+      <p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:22,color:"var(--ink)"}}>📍 {origin.label} <span style={{fontSize:13,fontFamily:"Pretendard",color:"var(--ink-soft)",fontWeight:600}}>{origin.label==="현재 위치"?"GPS 기준":"위치 권한 허용 시 자동 전환"}</span></p>
+      <div style={S.apiPill}>
+        <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,background:apiStatus.mode==="live"?"#2EB872":apiStatus.mode==="sample"?"var(--gold)":"var(--line)"}}/>
+        <span>{apiStatus.mode==="live" ? "TourAPI 4.0 실시간 연결됨" : apiStatus.mode==="sample" ? ("샘플 데이터 사용 중 · "+(apiStatus.msg||"API 응답 없음")) : "TourAPI 4.0 대기 중 · 주사위를 굴리면 조회합니다"}</span>
       </div>
     </div>
-  );
-}
-
-/* ───────── 메인 ───────── */
-function MainScreen({themes,toggleTheme,distIdx,setDistIdx,duration,setDuration,budget,setBudget,rollsLeft,rollDice,activeTrip,openVerify,finishTrip}){
-  return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
-    <div style={S.hello}><p style={{fontSize:13,color:"var(--ink-soft)"}}>오늘의 출발지</p><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:22,color:"var(--ink)"}}>📍 서울 <span style={{fontSize:13,fontFamily:"Pretendard",color:"var(--ink-soft)",fontWeight:600}}>현재 위치 기준</span></p></div>
     {activeTrip ? (
       <ActiveTripCard trip={activeTrip} openVerify={openVerify} finishTrip={finishTrip}/>
     ) : (<>
       <Section title="테마" sub="끌리는 분위기를 골라요 (복수 선택)"><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{THEME_LIST.map(t=><button key={t} onClick={()=>toggleTheme(t)} style={{...S.chip,...(themes.includes(t)?S.chipOn:{})}}>{THEME_LABELS[t]}</button>)}</div></Section>
       <Section title="이동거리" sub={`${DIST_STEPS[distIdx].label} · ${DIST_STEPS[distIdx].sub}`}><input type="range" min={0} max={3} value={distIdx} onChange={e=>setDistIdx(+e.target.value)} className="range" style={{width:"100%"}}/><div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>{DIST_STEPS.map((d,i)=><span key={i} style={{fontSize:11,fontWeight:i===distIdx?800:500,color:i===distIdx?"var(--stamp)":"var(--ink-soft)"}}>{d.label}</span>)}</div></Section>
-      <Section title="여행 기간"><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{DURATIONS.map(d=><button key={d} onClick={()=>setDuration(d)} style={{...S.segBtn,...(duration===d?S.segOn:{})}}>{d}</button>)}</div></Section>
+      <Section title="여행 기간"><div style={{display:"flex",gap:8}}>{DURATIONS.map(d=><button key={d} onClick={()=>setDuration(d)} style={{...S.segBtn,...(duration===d?S.segOn:{})}}>{d}</button>)}</div></Section>
       <Section title="예산" sub="교통·숙박 포함 예상 경비"><div style={{display:"flex",gap:8}}>{BUDGETS.map(b=><button key={b.v} onClick={()=>setBudget(b.v)} style={{...S.segBtn,...(budget===b.v?S.segOn:{})}}>{b.label}</button>)}</div></Section>
       <button onClick={rollDice} disabled={rollsLeft<=0} style={{...S.rollBtn,opacity:rollsLeft<=0?.5:1}}><span style={{fontSize:26}}>🎲</span><span>{rollsLeft>0?"주사위 굴리기":"오늘 기회 소진"}</span><span style={S.rollCount}>남은 {rollsLeft}/5</span></button>
       <p style={{textAlign:"center",fontSize:12,color:"var(--ink-soft)",marginTop:-6}}>목적지는 출발 전까지 봉투 안에 숨겨져요</p>
@@ -748,75 +1220,68 @@ function TileBoard({ownership,ownerColor,memberById,members,room,activeSgg}){
     const g={}; BOARD.forEach(t=>{(g[t.sido]=g[t.sido]||[]).push(t);});
     return SIDO_ORDER.filter(sd=>g[sd]).map(sd=>({sido:sd,tiles:g[sd]}));
   },[]);
-  const [open,setOpen] = useState(()=> groups[0]? {[groups[0].sido]:true} : {});
-  const toggle=(sd)=> setOpen(o=>({...o,[sd]:!o[sd]}));
   const names = members.map(m=>m.id==="me"?"나":m.name).join(" · ");
   return (
-    <div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+    <div style={S.boardDark}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
         <div>
-          <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:20}}>📖</span><span style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:18,color:"var(--ink)"}}>우리 게임판</span></div>
-          <p style={{fontSize:12,color:"var(--ink-soft)",marginTop:4}}>{names} · {members.length}명 {room?"경쟁 중":"플레이"}</p>
+          <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:22}}>📖</span><span style={S.boardTitle}>우리 게임판</span></div>
+          <p style={S.boardSub}>{names} · {members.length}명 {room?"경쟁 중":"플레이"}</p>
         </div>
-        {room && <span style={S.liveLight}><span className="blink-dot" style={{width:7,height:7,borderRadius:"50%",background:"var(--live)"}}/> LIVE</span>}
+        {room && <span style={S.livePill}><span style={S.liveDot}/> LIVE · 시즌 1</span>}
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {groups.map(g=>{
-          const total=g.tiles.length;
-          const mine=g.tiles.filter(t=>ownership[t.code]==="me").length;
-          const isOpen=!!open[g.sido];
-          const hasActive=g.tiles.some(t=>t.code===activeSgg);
-          return (<div key={g.sido} style={S.accSection}>
-            <button onClick={()=>toggle(g.sido)} style={S.accHead}>
-              <span style={{width:4,height:18,borderRadius:3,background:SIDO_ACCENT[g.sido]||"#888"}}/>
-              <span style={{fontSize:15,fontWeight:800,color:"var(--ink)"}}>{SIDO_FULL[g.sido]||g.sido}</span>
-              {hasActive && <span style={{background:"var(--live)",color:"#fff",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:8}}>여행 중</span>}
-              <span style={{marginLeft:"auto",fontSize:12,color:"var(--ink-soft)"}}>{mine}/{total} 점령</span>
-              <span style={{fontSize:10,color:"var(--ink-soft)",transform:isOpen?"rotate(90deg)":"none",transition:"transform .2s"}}>▶</span>
-            </button>
-            {isOpen && (<div style={{padding:"0 12px 12px"}}><div style={S.bGrid}>
-              {g.tiles.map(t=>{
-                const owner=ownership[t.code]; const isMe=owner==="me";
-                const mem = owner&&!isMe? memberById(owner):null;
-                const accent = isMe?"#2EB872":mem?mem.color:"#E3A92C";
-                const owned = isMe||mem;
-                const pts = t.depop? t.pt*2 : t.pt;
-                const active = t.code===activeSgg;
-                const borderC = active?"#F2913C":(owned?accent:(t.depop?"#E3A92C":"var(--line)"));
-                const bgC = active?"rgba(242,145,60,.08)":(owned?`${accent}1A`:(t.depop?"rgba(227,169,44,.08)":"var(--paper)"));
-                return (<div key={t.code} className={active?"tileBlink":""} style={{...S.bTileL, border:`1.5px solid ${borderC}`, background:bgC}}>
-                  {active && <span style={S.bLive}>여행 중</span>}
-                  {t.depop && <span style={S.bSun}>☀️</span>}
-                  {owned && !active && <span style={{...S.bBadge,background:accent}}>{isMe?"나":mem.name}</span>}
-                  <div style={{fontSize:23,textAlign:"center",marginTop:owned||t.depop?6:2}}>{t.icon}</div>
-                  <div style={{textAlign:"center",marginTop:4}}>
-                    <span style={{fontSize:12.5,fontWeight:800,color:"var(--ink)"}}>{t.name}</span>
-                    {t.depop && <span style={{fontSize:11,fontWeight:800,color:"var(--gold)"}}> ×2</span>}
-                  </div>
-                  <div style={{textAlign:"center",fontSize:11,fontWeight:700,color:t.depop?"var(--gold)":"var(--ink-soft)",marginTop:2}}>{pts}pt</div>
-                </div>);
-              })}
-            </div></div>)}
-          </div>);
-        })}
-      </div>
+      {groups.map(g=>{
+        const total=g.tiles.length;
+        const mine=g.tiles.filter(t=>ownership[t.code]==="me").length;
+        return (<div key={g.sido} style={{marginBottom:20}}>
+          <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:11}}>
+            <span style={{width:4,height:17,borderRadius:3,background:SIDO_ACCENT[g.sido]||"#888"}}/>
+            <span style={S.boardSido}>{SIDO_FULL[g.sido]||g.sido}</span>
+            <span style={S.boardCount}>{mine}/{total} 점령</span>
+          </div>
+          <div style={S.bGrid}>
+            {g.tiles.map(t=>{
+              const owner=ownership[t.code]; const isMe=owner==="me";
+              const mem = owner&&!isMe? memberById(owner):null;
+              const accent = isMe?"#2EB872":mem?mem.color:(t.depop?"#E3A92C":"rgba(255,255,255,.08)");
+              const owned = isMe||mem;
+              const pts = t.depop? t.pt*2 : t.pt;
+              const active = t.code===activeSgg;
+              return (<div key={t.code} className={active?"tileBlink":""} style={{...S.bTile, border:`2px solid ${active?"#F2913C":accent}`,
+                background: owned? `${accent}22` : (t.depop?"rgba(227,169,44,.07)":"#18233A")}}>
+                {active && <span style={S.bLive}>여행 중</span>}
+                {t.depop && <span style={S.bSun}>☀️</span>}
+                {owned && <span style={{...S.bBadge,background:isMe?"#2EB872":mem.color}}>{isMe?"나":mem.name}</span>}
+                <div style={{fontSize:24,textAlign:"center",marginTop:t.depop||owned?7:2}}>{t.icon}</div>
+                <div style={{textAlign:"center",marginTop:5}}>
+                  <span style={{fontSize:12.5,fontWeight:800,color:"#EAEFFA"}}>{t.name}</span>
+                  {t.depop && <span style={{fontSize:11,fontWeight:800,color:"#E3A92C"}}> ×2</span>}
+                </div>
+                <div style={{textAlign:"center",fontSize:11,fontWeight:700,color:t.depop?"#E3A92C":"#8A93AD",marginTop:2}}>{pts}pt</div>
+              </div>);
+            })}
+          </div>
+        </div>);
+      })}
     </div>
   );
 }
 function Lg({c,t,border}){return <span style={{display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:"var(--ink-soft)"}}><span style={{width:14,height:14,borderRadius:4,background:c,boxShadow:border?"inset 0 0 0 1.5px var(--line)":"none"}}/>{t}</span>;}
 
 /* ───────── 마이페이지 ───────── */
-function MyScreen({score,coins,inventory,ownedCount,trips,cards,room,resetDemo,openCards}){
+function MyScreen({score,coins,inventory,ownedCount,trips,cards,room,resetDemo,apiStatus,origin}){
+  const [showAllCards,setShowAllCards] = useState(false);
+  const shownCards = showAllCards ? cards : cards.slice(0,4);
   return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
     <div style={S.profile}><div style={S.avatar}>👤</div><div><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:18,color:"var(--ink)"}}>여행자 #0427</p><p style={{fontSize:12,color:"var(--ink-soft)"}}>서울 출발 · {room?`방 ${room.code}`:"솔로 플레이"}</p></div></div>
     <div style={S.statRow}><Stat k="점령 점수" v={score} c="var(--stamp)"/><Stat k="여행 코인" v={coins} c="var(--gold)"/><Stat k="정복 지역" v={ownedCount} c="var(--sea)"/></div>
     <div style={S.section}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
         <div style={{display:"flex",alignItems:"baseline",gap:8}}><h3 style={S.secTitle}>인증 카드</h3><span style={{fontSize:11.5,color:"var(--ink-soft)"}}>{cards.length}장</span></div>
-        {cards.length>=5 && <button onClick={openCards} style={S.moreBtn}>더보기</button>}
+        {cards.length>=5 && <button onClick={()=>setShowAllCards(v=>!v)} style={S.moreBtn}>{showAllCards?"접기":"더보기"}</button>}
       </div>
       {cards.length===0 ? <p style={S.empty}>도착 인증을 완료하면 인증샷·영수증 카드가 쌓여요.</p> :
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{cards.slice(0,4).map((c,i)=>(<div key={i} style={S.collCard}><div style={{...S.collImg,background:`linear-gradient(135deg,${c.grad[0]},${c.grad[1]})`}}><span style={S.collType}>{c.type==="영수증"?"🧾":"📷"} {c.type}</span>{c.depop && <span style={S.collGold}>★</span>}</div><div style={{padding:"8px 9px"}}><div style={{fontSize:12,fontWeight:800,color:"var(--ink)",lineHeight:1.2}}>{c.title}</div><div style={{fontSize:10.5,color:"var(--ink-soft)",marginTop:2}}>{c.place}</div></div></div>))}</div>}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{shownCards.map((c,i)=>(<div key={i} style={S.collCard}><div style={{...S.collImg,background:`linear-gradient(135deg,${c.grad[0]},${c.grad[1]})`}}><span style={S.collType}>{c.type==="영수증"?"🧾":"📷"} {c.type}</span>{c.depop && <span style={S.collGold}>★</span>}</div><div style={{padding:"8px 9px"}}><div style={{fontSize:12,fontWeight:800,color:"var(--ink)",lineHeight:1.2}}>{c.title}</div><div style={{fontSize:10.5,color:"var(--ink-soft)",marginTop:2}}>{c.place}</div></div></div>))}</div>}
     </div>
     <Section title="보유 이벤트 카드" sub={`${inventory.length}장`}>
       {inventory.length===0 ? <p style={S.empty}>주사위를 굴리면 가끔 카드가 떨어져요.</p> :
@@ -826,8 +1291,85 @@ function MyScreen({score,coins,inventory,ownedCount,trips,cards,room,resetDemo,o
       {trips.length===0 ? <p style={S.empty}>첫 여행을 시작해 보세요.</p> :
         trips.map((t,i)=>(<div key={i} style={S.tripRow}><span style={{width:8,height:8,borderRadius:"50%",background:t.outcome==="conquer"?(t.depop?"var(--gold)":"var(--stamp)"):t.outcome==="toll"?"var(--ink-soft)":"var(--sea)"}}/><span style={{fontSize:13.5,fontWeight:700,color:"var(--ink)"}}>{t.title}</span><span style={{fontSize:12,color:"var(--ink-soft)"}}>{t.sido} {t.sigungu}</span><span style={{marginLeft:"auto",fontSize:11.5,color:"var(--ink-soft)"}}>{t.verified}/3 · +{t.score}</span></div>))}
     </Section>
-    <p style={S.dataNote}>ⓘ 지도는 실제 행정구역 경계(시·군·구) 데이터입니다. 목적지·미션은 TourAPI 형태 샘플, 영수증 인증은 CLOVA OCR·국세청·Kakao API 자리를 모의 동작시켰습니다.</p>
+    <ApiPanel apiStatus={apiStatus} origin={origin}/>
+    <p style={S.dataNote}>ⓘ 지도는 실제 행정구역 경계(시·군·구) 데이터입니다. 목적지·미션·대표이미지는 한국관광공사 TourAPI 4.0(KorService2)에서 실시간 조회하며, 호출 실패 시 내장 샘플로 자동 폴백합니다. 도착 인증은 단말 GPS와 카카오 Local API(coord2regioncode)를 대조하고, 지도·길찾기는 카카오맵 SDK를 씁니다. 영수증 이미지 판독(OCR)과 국세청 사업자 진위 확인은 모의 동작이며, 상호 존재 확인만 카카오 로컬 검색으로 실제 조회합니다.</p>
     <button onClick={resetDemo} style={S.reset}>데모 초기화</button>
+  </div>);
+}
+function ApiPanel({apiStatus,origin}){
+  const [open,setOpen] = useState(false);
+  const [keyDraft,setKeyDraft] = useState(TOUR_CFG.key);
+  const [proxyDraft,setProxyDraft] = useState(TOUR_CFG.proxy);
+  const [testing,setTesting] = useState(false);
+  const [testMsg,setTestMsg] = useState("");
+  const [kOpen,setKOpen] = useState(false);
+  const [kJs,setKJs] = useState(KAKAO_CFG.js);
+  const [kRest,setKRest] = useState(KAKAO_CFG.rest);
+  const [kProxy,setKProxy] = useState(KAKAO_CFG.proxy);
+  const [kTesting,setKTesting] = useState(false);
+  const [kMsg,setKMsg] = useState("");
+  async function runKakaoTest(){
+    setKTesting(true); setKMsg("");
+    KAKAO_CFG.js = kJs.trim(); KAKAO_CFG.rest = kRest.trim(); KAKAO_CFG.proxy = kProxy.trim();
+    kakaoSdkPromise = null; kakaoSharePromise = null;
+    const lines = [];
+    try{ await loadKakaoSdk(); lines.push("✅ Maps SDK 로드 성공"); }
+    catch(e){ lines.push("❌ Maps SDK · " + ((e&&e.message)||e)); }
+    try{ const r = await kakaoRegionOf(37.5665,126.9780); lines.push("✅ Local REST 성공 · 서울시청 → " + r.full); }
+    catch(e){ lines.push("❌ Local REST · " + ((e&&e.message)||e)); }
+    setKMsg(lines.join("\n")); setKTesting(false);
+  }
+  async function runTest(){
+    setTesting(true); setTestMsg("");
+    TOUR_CFG.key = keyDraft.trim(); TOUR_CFG.proxy = proxyDraft.trim(); tourCache.clear();
+    try{
+      const items = await tourGet("areaBasedList2",{areaCode:"32",contentTypeId:"12",numOfRows:"1",pageNo:"1",arrange:"O"});
+      setTestMsg(items.length ? ("연결 성공 · 응답 예시 「"+stripTags(items[0].title)+"」") : "응답은 정상이나 결과가 0건입니다");
+    }catch(e){ setTestMsg("연결 실패 · "+((e&&e.message)||e)); }
+    setTesting(false);
+  }
+  const dotColor = apiStatus.mode==="live"?"#2EB872":apiStatus.mode==="sample"?"var(--gold)":"var(--line)";
+  return (<div style={S.section}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+      <h3 style={S.secTitle}>TourAPI 연동</h3>
+      <button onClick={()=>setOpen(v=>!v)} style={S.moreBtn}>{open?"접기":"설정"}</button>
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+      <span style={{width:8,height:8,borderRadius:"50%",background:dotColor,flexShrink:0}}/>
+      <span style={{fontSize:13,fontWeight:700,color:"var(--ink)"}}>
+        {apiStatus.mode==="live"?"실시간 연결됨":apiStatus.mode==="sample"?"샘플 폴백 중":"대기 중"}
+      </span>
+      <span style={{marginLeft:"auto",fontSize:11.5,color:"var(--ink-soft)"}}>KorService2</span>
+    </div>
+    {apiStatus.msg && <p style={{fontSize:11.5,color:"var(--ink-soft)",lineHeight:1.5}}>사유: {apiStatus.msg}</p>}
+    <p style={{fontSize:11.5,color:"var(--ink-soft)",lineHeight:1.5,marginTop:2}}>기준 좌표: {origin.label} ({origin.lat.toFixed(4)}, {origin.lng.toFixed(4)})</p>
+    {open && (<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
+      <label style={S.apiLabel}>일반 인증키 (data.go.kr)</label>
+      <input value={keyDraft} onChange={e=>setKeyDraft(e.target.value)} placeholder="serviceKey" style={S.apiInput}/>
+      <label style={S.apiLabel}>CORS 프록시 prefix (선택)</label>
+      <input value={proxyDraft} onChange={e=>setProxyDraft(e.target.value)} placeholder="예: https://내서버/proxy?url=" style={S.apiInput}/>
+      <button onClick={runTest} disabled={testing} style={{...S.apiBtn,opacity:testing?.6:1}}>{testing?"확인 중…":"연결 테스트"}</button>
+      {testMsg && <p style={{fontSize:12,color:"var(--ink)",lineHeight:1.5}}>{testMsg}</p>}
+      <p style={{fontSize:11,color:"var(--ink-soft)",lineHeight:1.6}}>브라우저에서 apis.data.go.kr을 직접 호출하면 CORS로 차단될 수 있습니다. 실제 배포 시에는 인증키를 서버에 두고 자체 프록시를 경유하세요.</p>
+    </div>)}
+
+    <div style={{height:1,background:"var(--line)",margin:"14px 0"}}/>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+      <h3 style={S.secTitle}>카카오 연동</h3>
+      <button onClick={()=>setKOpen(v=>!v)} style={S.moreBtn}>{kOpen?"접기":"설정"}</button>
+    </div>
+    <p style={{fontSize:11.5,color:"var(--ink-soft)",lineHeight:1.6}}>지도·마커·길찾기(Maps SDK), 도착 인증 행정구역 대조와 상호 확인(Local REST), 친구 초대 공유(JS SDK)에 사용합니다.</p>
+    {kOpen && (<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
+      <label style={S.apiLabel}>JavaScript 키</label>
+      <input value={kJs} onChange={e=>setKJs(e.target.value)} style={S.apiInput}/>
+      <label style={S.apiLabel}>REST API 키</label>
+      <input value={kRest} onChange={e=>setKRest(e.target.value)} style={S.apiInput}/>
+      <label style={S.apiLabel}>REST 프록시 prefix (선택)</label>
+      <input value={kProxy} onChange={e=>setKProxy(e.target.value)} placeholder="예: https://내서버/kakao?url=" style={S.apiInput}/>
+      <button onClick={runKakaoTest} disabled={kTesting} style={{...S.apiBtn,opacity:kTesting?.6:1}}>{kTesting?"확인 중…":"연결 테스트"}</button>
+      {kMsg && <p style={{fontSize:12,color:"var(--ink)",lineHeight:1.6,whiteSpace:"pre-line"}}>{kMsg}</p>}
+      <p style={{fontSize:11,color:"var(--ink-soft)",lineHeight:1.6}}>· Maps/JS SDK는 카카오 개발자 콘솔 &gt; 플랫폼 &gt; Web 에 현재 도메인이 등록돼 있어야 동작합니다.<br/>· REST 키는 원래 서버 보관용입니다. 배포 시에는 키를 서버에 두고 위 프록시를 경유하세요.<br/>· 네이티브 앱 키({KAKAO_CFG.native.slice(0,6)}…)는 iOS/Android 빌드 시 사용합니다.</p>
+    </div>)}
   </div>);
 }
 function Stat({k,v,c}){return <div style={S.stat}><div style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:24,color:c}}>{v}</div><div style={{fontSize:11,color:"var(--ink-soft)",marginTop:2}}>{k}</div></div>;}
@@ -910,10 +1452,6 @@ const S = {
   selBar:{display:"flex",alignItems:"center",background:"var(--paper)",borderRadius:12,padding:"10px 13px",margin:"2px 6px 4px"},
   tileGrid:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8},
   boardDark:{background:"#0C1326",borderRadius:18,padding:"16px 14px 18px"},
-  liveLight:{display:"inline-flex",alignItems:"center",gap:6,border:"1px solid var(--line)",color:"var(--ink-soft)",fontSize:11.5,fontWeight:800,padding:"5px 11px",borderRadius:20},
-  accSection:{background:"var(--paper)",border:"1px solid var(--line)",borderRadius:14,overflow:"hidden"},
-  accHead:{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"13px 14px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left"},
-  bTileL:{position:"relative",borderRadius:12,padding:"11px 8px 9px",minHeight:90},
   boardTitle:{fontFamily:"'Black Han Sans',sans-serif",fontSize:20,color:"#F2F5FB"},
   boardSub:{fontSize:12.5,color:"#8A93AD",marginTop:5},
   livePill:{display:"inline-flex",alignItems:"center",gap:6,border:"1px solid rgba(242,145,60,.55)",color:"#F2913C",fontSize:11.5,fontWeight:800,padding:"6px 12px",borderRadius:20,whiteSpace:"nowrap"},
@@ -969,6 +1507,15 @@ const S = {
   collType:{fontSize:10,fontWeight:800,color:"#fff",background:"rgba(0,0,0,.3)",padding:"3px 7px",borderRadius:8}, collGold:{position:"absolute",top:7,right:8,color:"var(--gold)",fontSize:14},
   invCard:{display:"flex",alignItems:"center",gap:12,background:"var(--paper)",border:"1.5px solid var(--line)",borderRadius:12,padding:"11px 13px"},
   dataNote:{fontSize:11,lineHeight:1.6,color:"var(--ink-soft)",background:"var(--paper-2)",borderRadius:12,padding:"12px 13px"},
+  apiPill:{display:"inline-flex",alignItems:"center",gap:7,marginTop:9,fontSize:11.5,fontWeight:700,padding:"6px 11px",borderRadius:20,border:"1px solid var(--line)",background:"var(--paper-2)",color:"var(--ink-soft)",lineHeight:1.3},
+  apiLabel:{fontSize:11.5,fontWeight:800,color:"var(--ink-soft)"},
+  mapFallback:{width:"100%",borderRadius:14,border:"1px dashed var(--line)",background:"var(--paper-2)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,textAlign:"center",padding:"0 16px",fontSize:11.5,color:"var(--ink-soft)",lineHeight:1.5},
+  routeBtn:{display:"block",textAlign:"center",marginTop:8,padding:"11px",borderRadius:12,background:"#FEE500",color:"#191600",fontSize:13,fontWeight:800,textDecoration:"none"},
+  locFail:{marginTop:12,display:"flex",flexDirection:"column",gap:6,background:"rgba(242,145,60,.10)",border:"1px solid rgba(242,145,60,.45)",borderRadius:12,padding:"12px 13px",fontSize:12.5,color:"var(--ink-soft)",lineHeight:1.5},
+  demoBtn:{marginTop:4,padding:"10px",borderRadius:10,border:"1px dashed var(--line)",background:"transparent",color:"var(--ink-soft)",fontSize:12,fontWeight:700,cursor:"pointer"},
+  demoMini:{padding:"3px 9px",borderRadius:8,border:"1px dashed var(--line)",background:"transparent",color:"var(--ink-soft)",fontSize:10.5,fontWeight:700,cursor:"pointer"},
+  apiInput:{width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1.5px solid var(--line)",background:"var(--paper)",color:"var(--ink)",fontSize:12,fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace"},
+  apiBtn:{padding:"11px",borderRadius:12,border:"none",background:"var(--ink)",color:"var(--paper)",fontSize:13,fontWeight:800,cursor:"pointer"},
   reset:{background:"none",border:"1.5px solid var(--line)",borderRadius:12,padding:"12px",color:"var(--ink-soft)",fontSize:13,fontWeight:700,cursor:"pointer"},
   toast:{position:"absolute",bottom:84,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"var(--paper)",fontSize:13,fontWeight:700,padding:"11px 18px",borderRadius:24,boxShadow:"0 8px 24px rgba(0,0,0,.3)",zIndex:60,whiteSpace:"nowrap"},
 };
@@ -985,9 +1532,6 @@ button:focus-visible{outline:2.5px solid var(--ink);outline-offset:2px}
 .range::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:var(--stamp);border:3px solid #fff;cursor:pointer}
 @keyframes shake{0%,100%{transform:rotate(-14deg) translateY(0)}25%{transform:rotate(12deg) translateY(-10px)}50%{transform:rotate(-8deg) translateY(4px)}75%{transform:rotate(10deg) translateY(-6px)}}
 .die-shake{display:inline-block;animation:shake .28s linear infinite}
-.dice-cube{transition:transform .6s cubic-bezier(.2,.85,.25,1)}
-@keyframes dicetumble{0%{transform:rotateX(0deg) rotateY(0deg) rotateZ(0deg)}100%{transform:rotateX(720deg) rotateY(1080deg) rotateZ(360deg)}}
-.dice-cube.rolling{animation:dicetumble .75s linear infinite}
 @keyframes spink{to{transform:rotate(360deg)}}.spin{display:inline-block;animation:spink .8s linear infinite}
 @keyframes olin{from{opacity:0}to{opacity:1}}.overlay-in{animation:olin .25s ease}
 @keyframes popin{from{opacity:0;transform:scale(.9) translateY(14px)}to{opacity:1;transform:none}}.pop-in{animation:popin .4s cubic-bezier(.2,.9,.3,1.2)}
