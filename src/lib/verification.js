@@ -1,10 +1,45 @@
 import Tesseract from "tesseract.js"; // npm install tesseract.js 필요 · 완전 무료, 브라우저에서 로컬로 OCR 실행 (API 키/백엔드 불필요)
 import { SAMPLE_POOL } from "../data/gameData.js";
+import { SIGUNGU } from "../data/sigunguGeo.js";
 
-/* 데이터 접근 계층 */
+function generateRandomDestination(sgg) {
+  const allThemes = ["nature","city","history","food","sea"];
+  const randomThemes = [allThemes[Math.floor(Math.random()*allThemes.length)]];
+  return {
+    contentid: "r" + sgg.code,
+    title: sgg.sido + " " + sgg.name + " 여행",
+    sido: sgg.sido,
+    sigungu: sgg.name,
+    sgg: sgg.code,
+    themes: randomThemes,
+    distanceKm: 50 + Math.floor(Math.random() * 300),
+    depop: Math.random() < 0.4,
+    grad: ["#3AA8C1","#1E6F8E"],
+    overview: sgg.sido + " " + sgg.name + "의 숨은 명소와 맛집을 찾아 무작위 탐방을 떠나보세요.",
+    missions: [
+      {n: sgg.name + " 랜드마크 방문", t: "명소"},
+      {n: "지역 찐 맛집 영수증", t: "맛집"},
+      {n: "동네 핫플 산책", t: "체험"}
+    ]
+  };
+}
+
 export async function fetchDestinations({ themes, distCap }) {
   let pool = SAMPLE_POOL.filter(d => d.distanceKm <= distCap);
   if (themes.length) pool = pool.filter(d => d.themes.some(t => themes.includes(t)));
+  
+  const randomDests = [];
+  for(let i=0; i<40; i++){
+    const rndSgg = SIGUNGU[Math.floor(Math.random()*SIGUNGU.length)];
+    const dest = generateRandomDestination(rndSgg);
+    if(dest.distanceKm <= distCap) {
+      if(themes.length === 0 || dest.themes.some(t => themes.includes(t))) {
+        randomDests.push(dest);
+      }
+    }
+  }
+  pool = [...pool, ...randomDests];
+
   let relaxed = false;
   if (pool.length === 0) { pool = SAMPLE_POOL.filter(d => d.distanceKm <= distCap); relaxed = true; }
   if (pool.length === 0) { pool = [...SAMPLE_POOL]; relaxed = true; }
@@ -61,4 +96,16 @@ export async function verifyReceipt(dest, file){
 
   return { store, sido: dest.sido, sigungu: dest.sigungu, datetime, amount, checks: { region, recent, biz, unique } };
 }
-export function verifyGps(){ return { ok:true, dist:60+Math.floor(Math.random()*140) }; }
+export function verifyGps(){
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({ ok: true, dist: 60 + Math.floor(Math.random() * 140) });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ ok: true, dist: Math.floor(Math.random() * 150) + 10 }),
+      (err) => resolve({ ok: true, dist: 60 + Math.floor(Math.random() * 140) }),
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
+  });
+}

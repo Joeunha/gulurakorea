@@ -16,8 +16,8 @@ export function VerifyFlow({ trip, onMissionDone, onDone, memberById, flash }){
   const doneCount = trip.missions.filter(m=>m.done).length;
   const allDone = trip.missions.every(m=>m.done);
 
-  function doArrival(){ const r=verifyGps(); onMissionDone(arrivalIdx,{gps:r}); flash(`도착 확인 · 반경 ${r.dist}m`); setTimeout(()=>setStep(1),600); }
-  function doGps(i){ const r=verifyGps(); onMissionDone(i,{gps:r}); flash(`인증 완료 · 반경 ${r.dist}m`); }
+  async function doArrival(){ const r=await verifyGps(); onMissionDone(arrivalIdx,{gps:r}); flash(`도착 확인 · 반경 ${r.dist}m`); setTimeout(()=>setStep(1),600); }
+  async function doGps(i){ const r=await verifyGps(); onMissionDone(i,{gps:r}); flash(`인증 완료 · 반경 ${r.dist}m`); }
   function pickReceipt(i){ pendRef.current=i; fileRef.current?.click(); }
   async function onFile(e){
     const i=pendRef.current; if(i<0) return;
