@@ -1,0 +1,146 @@
+import React, { useState, useMemo } from "react";
+import { SIGUNGU } from "../data/sigunguGeo.js";
+import { SIDO_ORDER, TOLL, SIDO_FULL, SIDO_ACCENT, BOARD } from "../data/gameData.js";
+import { S } from "../styles/styles.js";
+
+export function MapScreen({ownership,ownerColor,memberById,members,room,createRoom,joinRoom,openShare,leaveRoom,score,memberScore,ownedCount,myRegionCount,activeTrip,flash}){
+  const [view,setView] = useState("real");
+  const [joining,setJoining] = useState(false);
+  const [codeInput,setCodeInput] = useState("");
+  const activeSgg = activeTrip?.sgg;
+  return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={S.boardHead}>
+      <div><p style={{fontSize:12,color:"var(--ink-soft)"}}>정복한 지역</p><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:26,color:"var(--ink)"}}>{ownedCount}<span style={{fontSize:15,color:"var(--ink-soft)"}}> 곳</span></p></div>
+      <div style={{textAlign:"right"}}><p style={{fontSize:12,color:"var(--ink-soft)"}}>점령 점수</p><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:26,color:"var(--stamp)"}}>{score}</p></div>
+    </div>
+    <div style={S.viewSwitch}>
+      <button onClick={()=>setView("real")} style={{...S.viewBtn,...(view==="real"?S.viewOn:{})}}>지도 그림</button>
+      <button onClick={()=>setView("tiles")} style={{...S.viewBtn,...(view==="tiles"?S.viewOn:{})}}>타일</button>
+    </div>
+
+    {view==="real" ? <RealMap {...{ownership,ownerColor,memberById,activeSgg}}/> : <TileBoard {...{ownership,ownerColor,memberById,members,room,activeSgg}}/>}
+
+    <div style={S.legend}>{members.map(m=><Lg key={m.id} c={m.color} t={m.id==="me"?"나":m.name}/>)}<Lg c="var(--paper-2)" t="미점령" border/></div>
+
+    {!room ? (
+      <div style={S.roomCard}><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:15,color:"var(--ink)",marginBottom:4}}>친구와 같은 게임판</p>
+        <p style={{fontSize:12.5,color:"var(--ink-soft)",marginBottom:12,lineHeight:1.5}}>방을 만들어 친구를 초대하면 한 지도에서 영토를 두고 경쟁해요. 친구 땅에 도착하면 통행료를 냅니다.</p>
+        {!joining ? (
+          <div style={{display:"flex",gap:8}}><button onClick={createRoom} style={S.roomPrimary}>방 만들기</button><button onClick={()=>setJoining(true)} style={S.roomGhost}>코드로 참여</button></div>
+        ) : (
+          <div>
+            <p style={{fontSize:11.5,color:"var(--ink-soft)",marginBottom:6}}>친구에게 받은 방 코드를 입력하세요</p>
+            <div style={{display:"flex",gap:8}}>
+              <input value={codeInput} onChange={e=>setCodeInput(e.target.value.toUpperCase())} placeholder="예: KR-7C2A" maxLength={8} style={S.codeInput}/>
+              <button onClick={()=>{ if(!codeInput.trim()){flash("코드를 입력해 주세요");return;} joinRoom(codeInput); }} style={{...S.roomPrimary,flex:"none",padding:"13px 20px"}}>참여</button>
+            </div>
+            <button onClick={()=>{setJoining(false);setCodeInput("");}} style={{...S.roomGhost,marginTop:8,width:"100%"}}>취소</button>
+          </div>
+        )}</div>
+    ) : (
+      <div style={S.roomCard}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div><p style={{fontSize:11.5,color:"var(--ink-soft)"}}>방 코드</p><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:18,color:"var(--ink)",letterSpacing:1}}>{room.code}</p></div><button onClick={openShare} style={S.inviteBtn}>친구 초대</button></div>
+        <p style={{fontSize:11,color:"var(--ink-soft)",marginBottom:8}}>방 안 순위 · 점수 우선, 동점 시 정복 곳수</p>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>{
+          [...members].map(m=>({m,sc:memberScore(m.id),rg:myRegionCount(m.id)}))
+            .sort((a,b)=> b.sc-a.sc || b.rg-a.rg)
+            .map((row,idx)=>{ const m=row.m; const lead=idx===0; const isMe=m.id==="me";
+              return (<div key={m.id} style={{...S.memberRow, ...(lead?{border:"1.5px solid var(--gold)",background:"rgba(227,169,44,.07)"}:{}), ...(isMe&&!lead?{border:"1.5px solid var(--me)"}:{})}}>
+                <span style={{width:20,textAlign:"center",fontFamily:"'Black Han Sans',sans-serif",fontSize:13,color:"var(--ink-soft)"}}>{idx+1}</span>
+                <div style={{position:"relative",width:24,height:24}}>
+                  <span style={{width:24,height:24,borderRadius:"50%",background:m.color,display:"grid",placeItems:"center",color:"#fff",fontSize:11,fontWeight:800}}>{(isMe?"나":m.name)[0]}</span>
+                  {lead && <span style={{position:"absolute",top:-11,left:"50%",transform:"translateX(-50%)",fontSize:14}}>👑</span>}
+                </div>
+                <span style={{fontSize:13.5,fontWeight:800,color:isMe?"var(--me)":"var(--ink)"}}>{isMe?"나":m.name}</span>
+                <span style={{marginLeft:"auto",fontFamily:"'Black Han Sans',sans-serif",fontSize:15,color:"var(--ink)"}}>{row.sc}</span>
+                <span style={{fontSize:11,color:"var(--ink-soft)",width:38,textAlign:"right"}}>{row.rg}곳</span>
+              </div>);
+            })
+        }</div>
+        <button onClick={leaveRoom} style={{...S.roomGhost,marginTop:12,width:"100%"}}>방 나가기</button></div>)}
+  </div>);
+}
+
+export function RealMap({ownership,ownerColor,memberById,activeSgg}){
+  const [sel,setSel] = useState(null);
+  const selFeat = sel ? SIGUNGU.find(f=>f.code===sel) : null;
+  const selOwner = selFeat ? (selFeat.sido==="서울"?"me":ownership[selFeat.code]) : null;
+  return (
+    <div style={S.mapCard}>
+      <svg viewBox="-8 -8 636 674" style={{width:"100%",height:"auto",display:"block"}}>
+        {SIGUNGU.map(f=>{
+          const owner = f.sido==="서울" ? "me" : ownership[f.code];
+          const fill = owner ? ownerColor(owner) : "#FFFFFF";
+          const active = f.code===activeSgg;
+          return <path key={f.code} className={active?"mapBlink":""} d={f.d} fill={fill} stroke={sel===f.code?"#16223F":active?"#F2913C":"rgba(70,70,90,.35)"} strokeWidth={sel===f.code?1.6:active?1.6:0.4} onClick={()=>setSel(f.code)} style={{cursor:"pointer"}}/>;
+        })}
+      </svg>
+      {selFeat && (<div style={S.selBar}><b style={{color:"var(--ink)"}}>{selFeat.sido} {selFeat.name}</b>
+        <span style={{marginLeft:8,fontSize:12.5,color:"var(--ink-soft)"}}>{selOwner==="me"?(selFeat.sido==="서울"?"홈 · 나의 영토":"나의 영토"):selOwner?`${memberById(selOwner)?.name}님의 영토`:"미점령"}</span>
+        {selOwner && selOwner!=="me" && <span style={{marginLeft:"auto",fontSize:11.5,color:"var(--stamp)",fontWeight:700}}>통행료 {TOLL}🪙</span>}</div>)}
+      <p style={{fontSize:11,color:"var(--ink-soft)",textAlign:"center",margin:"2px 0 2px"}}>인증한 시·군·구가 내 색으로 칠해져요 · 지역을 탭해보세요</p>
+    </div>
+  );
+}
+
+export function TileBoard({ownership,ownerColor,memberById,members,room,activeSgg}){
+  const groups = useMemo(()=>{
+    const g={}; BOARD.forEach(t=>{(g[t.sido]=g[t.sido]||[]).push(t);});
+    return SIDO_ORDER.filter(sd=>g[sd]).map(sd=>({sido:sd,tiles:g[sd]}));
+  },[]);
+  const [open,setOpen] = useState(()=> groups[0]? {[groups[0].sido]:true} : {});
+  const toggle=(sd)=> setOpen(o=>({...o,[sd]:!o[sd]}));
+  const names = members.map(m=>m.id==="me"?"나":m.name).join(" · ");
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:20}}>📖</span><span style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:18,color:"var(--ink)"}}>우리 게임판</span></div>
+          <p style={{fontSize:12,color:"var(--ink-soft)",marginTop:4}}>{names} · {members.length}명 {room?"경쟁 중":"플레이"}</p>
+        </div>
+        {room && <span style={S.liveLight}><span className="blink-dot" style={{width:7,height:7,borderRadius:"50%",background:"var(--live)"}}/> LIVE</span>}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {groups.map(g=>{
+          const total=g.tiles.length;
+          const mine=g.tiles.filter(t=>ownership[t.code]==="me").length;
+          const isOpen=!!open[g.sido];
+          const hasActive=g.tiles.some(t=>t.code===activeSgg);
+          return (<div key={g.sido} style={S.accSection}>
+            <button onClick={()=>toggle(g.sido)} style={S.accHead}>
+              <span style={{width:4,height:18,borderRadius:3,background:SIDO_ACCENT[g.sido]||"#888"}}/>
+              <span style={{fontSize:15,fontWeight:800,color:"var(--ink)"}}>{SIDO_FULL[g.sido]||g.sido}</span>
+              {hasActive && <span style={{background:"var(--live)",color:"#fff",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:8}}>여행 중</span>}
+              <span style={{marginLeft:"auto",fontSize:12,color:"var(--ink-soft)"}}>{mine}/{total} 점령</span>
+              <span style={{fontSize:10,color:"var(--ink-soft)",transform:isOpen?"rotate(90deg)":"none",transition:"transform .2s"}}>▶</span>
+            </button>
+            {isOpen && (<div style={{padding:"0 12px 12px"}}><div style={S.bGrid}>
+              {g.tiles.map(t=>{
+                const owner=ownership[t.code]; const isMe=owner==="me";
+                const mem = owner&&!isMe? memberById(owner):null;
+                const accent = isMe?"#2EB872":mem?mem.color:"#E3A92C";
+                const owned = isMe||mem;
+                const pts = t.depop? t.pt*2 : t.pt;
+                const active = t.code===activeSgg;
+                const borderC = active?"#F2913C":(owned?accent:(t.depop?"#E3A92C":"var(--line)"));
+                const bgC = active?"rgba(242,145,60,.08)":(owned?`${accent}1A`:(t.depop?"rgba(227,169,44,.08)":"var(--paper)"));
+                return (<div key={t.code} className={active?"tileBlink":""} style={{...S.bTileL, border:`1.5px solid ${borderC}`, background:bgC}}>
+                  {active && <span style={S.bLive}>여행 중</span>}
+                  {t.depop && <span style={S.bSun}>☀️</span>}
+                  {owned && !active && <span style={{...S.bBadge,background:accent}}>{isMe?"나":mem.name}</span>}
+                  <div style={{fontSize:23,textAlign:"center",marginTop:owned||t.depop?6:2}}>{t.icon}</div>
+                  <div style={{textAlign:"center",marginTop:4}}>
+                    <span style={{fontSize:12.5,fontWeight:800,color:"var(--ink)"}}>{t.name}</span>
+                    {t.depop && <span style={{fontSize:11,fontWeight:800,color:"var(--gold)"}}> ×2</span>}
+                  </div>
+                  <div style={{textAlign:"center",fontSize:11,fontWeight:700,color:t.depop?"var(--gold)":"var(--ink-soft)",marginTop:2}}>{pts}pt</div>
+                </div>);
+              })}
+            </div></div>)}
+          </div>);
+        })}
+      </div>
+    </div>
+  );
+}
+export function Lg({c,t,border}){return <span style={{display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:"var(--ink-soft)"}}><span style={{width:14,height:14,borderRadius:4,background:c,boxShadow:border?"inset 0 0 0 1.5px var(--line)":"none"}}/>{t}</span>;}
+
