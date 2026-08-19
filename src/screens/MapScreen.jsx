@@ -16,8 +16,8 @@ export function MapScreen({ownership,ownerColor,memberById,members,room,createRo
   const activeSgg = activeTrip?.sgg;
   return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
     <div style={S.boardHead}>
-      <div><p style={{fontSize:12,color:"var(--ink-soft)"}}>정복한 지역</p><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:26,color:"var(--ink)"}}>{ownedCount}<span style={{fontSize:15,color:"var(--ink-soft)"}}> 곳</span></p></div>
-      <div style={{textAlign:"right"}}><p style={{fontSize:12,color:"var(--ink-soft)"}}>점령 점수</p><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:26,color:"var(--stamp)"}}>{score}</p></div>
+      <div><p style={{fontSize:12,color:"var(--ink-soft)"}}>정복한 지역</p><p style={{fontFamily:"'HiKR',sans-serif",fontSize:26,color:"var(--ink)"}}>{ownedCount}<span style={{fontSize:15,color:"var(--ink-soft)"}}> 곳</span></p></div>
+      <div style={{textAlign:"right"}}><p style={{fontSize:12,color:"var(--ink-soft)"}}>점령 점수</p><p style={{fontFamily:"'HiKR',sans-serif",fontSize:26,color:"var(--stamp)"}}>{score}</p></div>
     </div>
     <div style={S.viewSwitch}>
       <button onClick={()=>setView("real")} style={{...S.viewBtn,...(view==="real"?S.viewOn:{})}}>지도</button>
@@ -29,7 +29,7 @@ export function MapScreen({ownership,ownerColor,memberById,members,room,createRo
     <div style={S.legend}>{members.map(m=><Lg key={m.id} c={m.color} t={m.id==="me"?"나":m.name}/>)}<Lg c="var(--paper-2)" t="미점령" border/></div>
 
     {!room ? (
-      <div style={S.roomCard}><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:15,color:"var(--ink)",marginBottom:4}}>친구와 같은 게임판</p>
+      <div style={S.roomCard}><p style={{fontFamily:"'HiKR',sans-serif",fontSize:15,color:"var(--ink)",marginBottom:4}}>친구와 같은 게임판</p>
         <p style={{fontSize:12.5,color:"var(--ink-soft)",marginBottom:12,lineHeight:1.5}}>방을 만들어 친구를 초대하면 한 지도에서 영토를 두고 경쟁해요. 친구 땅에 도착하면 통행료를 냅니다.</p>
         {!joining ? (
           <div style={{display:"flex",gap:8}}><button onClick={createRoom} style={S.roomPrimary}>방 만들기</button><button onClick={()=>setJoining(true)} style={S.roomGhost}>코드로 참여</button></div>
@@ -44,20 +44,20 @@ export function MapScreen({ownership,ownerColor,memberById,members,room,createRo
           </div>
         )}</div>
     ) : (
-      <div style={S.roomCard}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div><p style={{fontSize:11.5,color:"var(--ink-soft)"}}>방 코드</p><p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:18,color:"var(--ink)",letterSpacing:1}}>{room.code}</p></div><button onClick={openShare} style={S.inviteBtn}>친구 초대</button></div>
+      <div style={S.roomCard}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div><p style={{fontSize:11.5,color:"var(--ink-soft)"}}>방 코드</p><p style={{fontFamily:"'HiKR',sans-serif",fontSize:18,color:"var(--ink)",letterSpacing:1}}>{room.code}</p></div><button onClick={openShare} style={S.inviteBtn}>친구 초대</button></div>
         <p style={{fontSize:11,color:"var(--ink-soft)",marginBottom:8}}>방 안 순위 · 점수 우선, 동점 시 정복 곳수</p>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>{
           [...members].map(m=>({m,sc:memberScore(m.id),rg:myRegionCount(m.id)}))
             .sort((a,b)=> b.sc-a.sc || b.rg-a.rg)
             .map((row,idx)=>{ const m=row.m; const lead=idx===0; const isMe=m.id==="me";
               return (<div key={m.id} style={{...S.memberRow, ...(lead?{border:"1.5px solid var(--gold)",background:"rgba(227,169,44,.07)"}:{}), ...(isMe&&!lead?{border:"1.5px solid var(--me)"}:{})}}>
-                <span style={{width:20,textAlign:"center",fontFamily:"'Black Han Sans',sans-serif",fontSize:13,color:"var(--ink-soft)"}}>{idx+1}</span>
+                <span style={{width:20,textAlign:"center",fontFamily:"'HiKR',sans-serif",fontSize:13,color:"var(--ink-soft)"}}>{idx+1}</span>
                 <div style={{position:"relative",width:24,height:24}}>
                   <span style={{width:24,height:24,borderRadius:"50%",background:m.color,display:"grid",placeItems:"center",color:"#fff",fontSize:11,fontWeight:800}}>{(isMe?"나":m.name)[0]}</span>
                   {lead && <span style={{position:"absolute",top:-11,left:"50%",transform:"translateX(-50%)",fontSize:14}}>👑</span>}
                 </div>
                 <span style={{fontSize:13.5,fontWeight:800,color:isMe?"var(--me)":"var(--ink)"}}>{isMe?"나":m.name}</span>
-                <span style={{marginLeft:"auto",fontFamily:"'Black Han Sans',sans-serif",fontSize:15,color:"var(--ink)"}}>{row.sc}</span>
+                <span style={{marginLeft:"auto",fontFamily:"'HiKR',sans-serif",fontSize:15,color:"var(--ink)"}}>{row.sc}</span>
                 <span style={{fontSize:11,color:"var(--ink-soft)",width:38,textAlign:"right"}}>{row.rg}곳</span>
               </div>);
             })

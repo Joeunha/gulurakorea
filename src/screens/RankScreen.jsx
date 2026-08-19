@@ -21,7 +21,7 @@ export function RankScreen({myRoomScore,myRoomRegions,room,memberCount}){
       <div style={S.rankHero}>
         <p style={{fontSize:12,color:"var(--ink-soft)"}}>우리 방 전국 순위 {room?`· ${memberCount}명`:"· 솔로"}</p>
         <div style={{display:"flex",alignItems:"baseline",gap:5}}>
-          <span style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:42,color:"var(--stamp)"}}>{me.rank}</span>
+          <span style={{fontFamily:"'HiKR',sans-serif",fontSize:42,color:"var(--stamp)"}}>{me.rank}</span>
           <span style={{fontSize:17,fontWeight:800,color:"var(--ink)"}}>위</span>
           <span style={{marginLeft:"auto",fontSize:12,color:"var(--ink-soft)"}}>전체 {ranked.length}개 방 중</span>
         </div>
@@ -38,7 +38,7 @@ export function RankScreen({myRoomScore,myRoomRegions,room,memberCount}){
             <div style={{fontSize:24}}>{medal[p.rank-1]}</div>
             <div style={{fontSize:11.5,fontWeight:800,color:p.isMe?"var(--stamp)":"var(--ink)",textAlign:"center",lineHeight:1.2}}>{p.name}</div>
             <div style={{...S.podBar,height:h,background:p.isMe?"var(--stamp)":p.rank===1?"var(--gold)":"var(--ink-soft)"}}>
-              <span style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:18,color:"#fff"}}>{p.score}</span>
+              <span style={{fontFamily:"'HiKR',sans-serif",fontSize:18,color:"#fff"}}>{p.score}</span>
               <span style={{fontSize:10,color:"rgba(255,255,255,.9)"}}>{p.regions}곳</span>
             </div>
           </div>);
@@ -56,9 +56,9 @@ export function RankScreen({myRoomScore,myRoomRegions,room,memberCount}){
 
 export function RankRow({p,medal}){
   return (<div style={{...S.rankRow, ...(p.isMe?{border:"1.5px solid var(--stamp)",background:"rgba(19,31,60,.06)"}:{})}}>
-    <span style={{width:26,textAlign:"center",fontFamily:"'Black Han Sans',sans-serif",fontSize:15,color:p.rank<=3?"var(--gold)":"var(--ink-soft)"}}>{p.rank<=3?medal[p.rank-1]:p.rank}</span>
+    <span style={{width:26,textAlign:"center",fontFamily:"'HiKR',sans-serif",fontSize:15,color:p.rank<=3?"var(--gold)":"var(--ink-soft)"}}>{p.rank<=3?medal[p.rank-1]:p.rank}</span>
     <span style={{fontSize:13.5,fontWeight:800,color:p.isMe?"var(--stamp)":"var(--ink)"}}>{p.name}</span>
-    <span style={{marginLeft:"auto",fontFamily:"'Black Han Sans',sans-serif",fontSize:16,color:"var(--ink)"}}>{p.score}</span>
+    <span style={{marginLeft:"auto",fontFamily:"'HiKR',sans-serif",fontSize:16,color:"var(--ink)"}}>{p.score}</span>
     <span style={{fontSize:11,color:"var(--ink-soft)",width:42,textAlign:"right"}}>{p.regions}곳</span>
   </div>);
 }

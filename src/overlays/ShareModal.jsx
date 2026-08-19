@@ -26,9 +26,9 @@ export function ShareModal({ room, onClose, onAccept, flash }){
   return (
     <div style={S.modalScrim} onClick={onClose}><div style={S.sheet} onClick={e=>e.stopPropagation()} className="sheet-in">
       <div style={S.sheetGrab}/>
-      <h3 style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:19,color:"var(--ink)",textAlign:"center"}}>친구 초대</h3>
+      <h3 style={{fontFamily:"'HiKR',sans-serif",fontSize:19,color:"var(--ink)",textAlign:"center"}}>친구 초대</h3>
       <p style={{fontSize:12.5,color:"var(--ink-soft)",textAlign:"center",margin:"4px 0 16px"}}>아래 링크나 코드를 친구에게 공유하세요</p>
-      <div style={S.shareCode}><span style={{fontSize:11,color:"var(--ink-soft)"}}>방 코드</span><span style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:22,color:"var(--ink)",letterSpacing:1}}>{code}</span></div>
+      <div style={S.shareCode}><span style={{fontSize:11,color:"var(--ink-soft)"}}>방 코드</span><span style={{fontFamily:"'HiKR',sans-serif",fontSize:22,color:"var(--ink)",letterSpacing:1}}>{code}</span></div>
       <div style={S.shareLink}>{link}</div>
       <p style={{fontSize:11,color:"var(--ink-soft)",lineHeight:1.6,marginTop:6}}>이 링크로 들어오면 코드를 입력하지 않아도 바로 이 방에 참여합니다.</p>
       <div style={{display:"flex",gap:8,marginTop:12}}>

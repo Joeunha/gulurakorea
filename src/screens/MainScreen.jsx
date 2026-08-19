@@ -11,7 +11,7 @@ export function MainScreen({themes,toggleTheme,distIdx,setDistIdx,duration,setDu
   return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
     <div style={S.hello}>
       <p style={{fontSize:13,color:"var(--ink-soft)"}}>오늘의 출발지</p>
-      <p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:22,color:"var(--ink)"}}>📍 {origin.label}</p>
+      <p style={{fontFamily:"'HiKR',sans-serif",fontSize:22,color:"var(--ink)"}}>📍 {origin.label}</p>
       {origin.sub && <p style={{fontSize:12,color:"var(--ink-soft)",fontWeight:600,marginTop:2}}>{origin.sub}</p>}
       <div style={S.apiPill}>
         <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,background:apiStatus.mode==="live"?"#2EB872":apiStatus.mode==="sample"?"var(--gold)":"var(--line)"}}/>
@@ -45,7 +45,7 @@ export function ActiveTripCard({trip,openVerify,finishTrip}){
       </div>
       <div style={{padding:"14px 16px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <span style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:14,color:"var(--ink)"}}>도착 미션</span>
+          <span style={{fontFamily:"'HiKR',sans-serif",fontSize:14,color:"var(--ink)"}}>도착 미션</span>
           <span style={{fontSize:12,color:"var(--ink-soft)"}}>{done}/3 인증</span>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:7}}>

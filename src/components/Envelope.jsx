@@ -8,5 +8,5 @@ export function Envelope({ opening, themes, dist, dur, relaxed }){
     <div style={S.envFlap} className={opening?"flap-open":""}/><div style={S.envSeal} className={opening?"seal-crack":""}>출발</div>
     {opening && (<><div style={S.flash} className="flash"/>{burst.map((b,i)=>(<span key={i} className="burst" style={{"--tx":`${b.tx}px`,"--ty":`${b.ty}px`,animationDelay:`${b.d}s`,position:"absolute",top:30,left:"50%",width:8,height:8,borderRadius:"50%",background:"var(--gold)"}}/>))}</>)}</div>);
 }
-export function Meta({k,v,hi}){return (<div style={{flex:1,textAlign:"center"}}><div style={{fontSize:11,color:"var(--ink-soft)",marginBottom:3}}>{k}</div><div style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:17,color:hi?"var(--stamp)":"var(--ink)"}}>{v}</div></div>);}
+export function Meta({k,v,hi}){return (<div style={{flex:1,textAlign:"center"}}><div style={{fontSize:11,color:"var(--ink-soft)",marginBottom:3}}>{k}</div><div style={{fontFamily:"'HiKR',sans-serif",fontSize:17,color:hi?"var(--stamp)":"var(--ink)"}}>{v}</div></div>);}
 

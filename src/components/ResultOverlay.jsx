@@ -8,7 +8,7 @@ export function ResultOverlay({ trip, result, onClose }){
       <div style={{flex:1,overflowY:"auto",padding:"24px 22px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
         <div style={{textAlign:"center"}} className="reveal-in">
           <div style={{...S.resultBadge,background:`linear-gradient(135deg,${trip.grad[0]},${trip.grad[1]})`}}>{trip.depop?"★":"✓"}</div>
-          <h2 style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:25,color:"var(--ink)",marginTop:16}}>{result.label}!</h2>
+          <h2 style={{fontFamily:"'HiKR',sans-serif",fontSize:25,color:"var(--ink)",marginTop:16}}>{result.label}!</h2>
           <p style={{fontSize:13,color:"var(--ink-soft)",marginTop:4}}>{trip.sido} {trip.sigungu} · {trip.title}</p>
           <div style={S.tally}>
             <Row k={trip.outcome==="conquer"?"점령 점수":trip.outcome==="toll"?"방문 점수":"재방문 점수"} v={`+${result.base}`}/>
