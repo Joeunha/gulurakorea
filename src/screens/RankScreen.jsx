@@ -3,6 +3,7 @@
  */
 import React, { useMemo } from "react";
 import { S } from "../ui/styles.js";
+import { NATIONAL_ROOMS } from "../data/constants.js";
 
 /* ───────── 랭킹 ───────── */
 export function RankScreen({myRoomScore,myRoomRegions,room,memberCount}){
