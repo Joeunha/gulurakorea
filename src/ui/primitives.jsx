@@ -10,7 +10,7 @@ export function Meta({k,v,hi}){return (<div style={{flex:1,textAlign:"center"}}>
 
 export function Stat({k,v,c}){return <div style={S.stat}><div style={{fontFamily:"'HiKR',sans-serif",fontSize:24,color:c}}>{v}</div><div style={{fontSize:11,color:"var(--ink-soft)",marginTop:2}}>{k}</div></div>;}
 
-export function Row({k,v,hi}){return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}><span style={{fontSize:13,color:"var(--ink-soft)"}}>{k}</span><span style={{fontFamily:hi?"'HiKR',sans-serif":"Pretendard",fontSize:hi?19:14,fontWeight:hi?400:700,color:hi?"var(--stamp)":"var(--ink)"}}>{v}</span></div>;}
+export function Row({k,v,hi}){return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}><span style={{fontSize:13,color:"var(--ink-soft)"}}>{k}</span><span style={{fontFamily:hi?"'HiKR',sans-serif":"'MiceGothic',sans-serif",fontSize:hi?19:14,fontWeight:hi?400:700,color:hi?"var(--stamp)":"var(--ink)"}}>{v}</span></div>;}
 
 export function Chk({ok,t}){return <span style={{display:"flex",alignItems:"center",gap:4,fontSize:11.5,fontWeight:700,color:ok?"var(--sea)":"var(--ink-soft)",background:ok?"rgba(30,142,138,.1)":"var(--paper-2)",padding:"4px 9px",borderRadius:8}}>{ok?"✓":"–"} {t}</span>;}
 

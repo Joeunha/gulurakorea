@@ -5,7 +5,7 @@ import hikrWoff2 from "../assets/fonts/HiKR-ExtraBold.woff2";
 import hikrWoff from "../assets/fonts/HiKR-ExtraBold.woff";
 /* ───────── 스타일 ───────── */
 export const S = {
-  root:{minHeight:"100vh",background:"#23304d",display:"flex",justifyContent:"center",alignItems:"flex-start",fontFamily:"Pretendard,system-ui,sans-serif"},
+  root:{minHeight:"100vh",background:"#23304d",display:"flex",justifyContent:"center",alignItems:"flex-start",fontFamily:"'MiceGothic',system-ui,sans-serif"},
   phone:{position:"relative",width:"100%",maxWidth:440,minHeight:"100vh",background:"var(--paper)",display:"flex",flexDirection:"column",overflow:"hidden"},
   appbar:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid var(--line)"},
   logoDie:{fontSize:22,color:"var(--ink)"}, wordmark:{fontFamily:"'HiKR',sans-serif",fontSize:16,color:"var(--ink)",letterSpacing:.3},
@@ -20,7 +20,7 @@ export const S = {
   segBtn:{flex:1,padding:"11px 6px",borderRadius:12,border:"1.5px solid var(--line)",background:"var(--paper)",color:"var(--ink-soft)",fontSize:13,fontWeight:700,cursor:"pointer"},
   segOn:{background:"var(--ink)",color:"var(--paper)",border:"1.5px solid var(--ink)"},
   rollBtn:{display:"flex",alignItems:"center",justifyContent:"center",gap:10,background:"var(--stamp)",color:"#fff",border:"none",borderRadius:18,padding:"18px",fontFamily:"'HiKR',sans-serif",fontSize:19,cursor:"pointer",boxShadow:"0 6px 0 var(--stamp-deep)",marginTop:4},
-  rollCount:{fontFamily:"Pretendard",fontSize:12,fontWeight:700,background:"rgba(255,255,255,.22)",padding:"3px 9px",borderRadius:20},
+  rollCount:{fontFamily:"'MiceGothic',sans-serif",fontSize:12,fontWeight:700,background:"rgba(255,255,255,.22)",padding:"3px 9px",borderRadius:20},
   activeBanner:{display:"flex",alignItems:"center",gap:12,background:"var(--ink)",border:"none",borderRadius:16,padding:"12px 14px",cursor:"pointer",boxShadow:"0 6px 18px rgba(22,34,63,.25)"},
   activeThumb:{width:46,height:46,borderRadius:12,flexShrink:0},
   overlay:{position:"absolute",inset:0,background:"radial-gradient(120% 90% at 50% 0%, #1b2b4d 0%, #0d1730 70%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 22px",zIndex:30},
@@ -92,7 +92,7 @@ export const S = {
   bSun:{position:"absolute",top:7,left:8,fontSize:12},
   bBadge:{position:"absolute",top:7,right:7,color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8},
   bLive:{position:"absolute",top:7,right:7,color:"#fff",background:"#F2913C",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:8},
-  codeInput:{flex:1,padding:"13px 14px",borderRadius:12,border:"1.5px solid var(--line)",background:"var(--paper)",color:"var(--ink)",fontSize:15,fontWeight:700,letterSpacing:1,outline:"none",fontFamily:"Pretendard"},
+  codeInput:{flex:1,padding:"13px 14px",borderRadius:12,border:"1.5px solid var(--line)",background:"var(--paper)",color:"var(--ink)",fontSize:15,fontWeight:700,letterSpacing:1,outline:"none",fontFamily:"'MiceGothic',sans-serif"},
   tripCard:{background:"var(--paper)",border:"2px solid var(--stamp)",borderRadius:18,overflow:"hidden",boxShadow:"0 8px 24px rgba(19,31,60,.15)"},
   tripStatus:{display:"flex",alignItems:"center",gap:7,background:"var(--stamp)",color:"#fff",fontSize:12,fontWeight:800,padding:"8px 14px"},
   tripDot:{width:8,height:8,borderRadius:"50%",background:"#fff"},
@@ -151,10 +151,13 @@ export const S = {
 };
 
 export const CSS = `
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+@font-face{font-family:'MiceGothic';src:url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2206-01@1.0/MICEGothic.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'MiceGothic';src:url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2206-01@1.0/MICEGothic%20Bold.woff2') format('woff2');font-weight:700;font-display:swap}
 @font-face{font-family:'HiKR';src:url(${hikrWoff2}) format('woff2'),url(${hikrWoff}) format('woff');font-weight:100 900;font-style:normal;font-display:swap}
 :root{--paper:#F4EDDF;--paper-2:#EAE0CB;--ink:#16223F;--ink-soft:#5A668A;--stamp:#131F3C;--stamp-deep:#0B1426;--me:#2EB872;--live:#F2913C;--gold:#E3A92C;--sea:#1E8E8A;--line:rgba(22,34,63,.13);}
 *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html,body,#root{font-family:'MiceGothic',system-ui,sans-serif}
+button,input,select,textarea{font-family:inherit}
 button:focus-visible{outline:2.5px solid var(--ink);outline-offset:2px}
 .scroll::-webkit-scrollbar,.sheet::-webkit-scrollbar{width:0}
 .range{-webkit-appearance:none;height:6px;border-radius:6px;background:var(--paper);outline:none}

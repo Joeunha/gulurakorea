@@ -69,7 +69,7 @@ export function VerifyFlow({ trip, onMissionDone, onDone, memberById, flash }){
           <span style={{fontSize:12,color:"var(--ink-soft)"}}>{trip.sido} · {trip.sigungu}</span>
           <button onClick={onDone} style={S.vfClose}>나중에</button>
         </div>
-        <h2 style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:21,color:"var(--ink)",marginTop:2}}>{trip.title}</h2>
+        <h2 style={{fontFamily:"'HiKR',sans-serif",fontSize:21,color:"var(--ink)",marginTop:2}}>{trip.title}</h2>
         <div style={S.stepper}>
           {["도착 인증","미션 인증"].map((lb,i)=>(
             <React.Fragment key={i}>
@@ -106,7 +106,7 @@ export function VerifyFlow({ trip, onMissionDone, onDone, memberById, flash }){
         </>)}
 
         {step===1 && (<>
-          <p style={{fontFamily:"'Black Han Sans',sans-serif",fontSize:15,color:"var(--ink)"}}>추가 미션 <span style={{fontSize:12,fontFamily:"Pretendard",color:"var(--ink-soft)",fontWeight:600}}>· 인증당 +20점</span></p>
+          <p style={{fontFamily:"'HiKR',sans-serif",fontSize:15,color:"var(--ink)"}}>추가 미션 <span style={{fontSize:12,fontFamily:"'MiceGothic',sans-serif",color:"var(--ink-soft)",fontWeight:600}}>· 인증당 +20점</span></p>
           <p style={{fontSize:12.5,color:"var(--ink-soft)",margin:"4px 0 14px"}}>맛집은 영수증, 체험은 위치로 인증해요. 모두 인증하면 메인에서 점령할 수 있어요.</p>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {others.map(m=>(<div key={m.i} style={{...S.vCard,...(m.done?S.vCardDone:{})}}>
